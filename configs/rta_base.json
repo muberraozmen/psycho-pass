@@ -1,0 +1,25 @@
+{
+    "seed": {
+        "name": "adv_bench",
+        "num_samples": 2
+    },
+    "attack": {
+        "name": "rta",
+        "max_turns": 2,
+        "adversarial": {
+            "type": "ollama",
+            "model_name": "llama3.1",
+            "temperature": 1.0
+        },
+        "scoring": {
+            "type": "ollama",
+            "model_name": "llama3.1",
+            "temperature": 0.0
+        },
+        "objective": {
+            "type": "ollama",
+            "model_name": "llama3.1",
+            "temperature": 1.0
+        }
+    }
+}
