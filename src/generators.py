@@ -1,6 +1,6 @@
 from pyrit.setup import initialize_pyrit_async
 from pyrit.datasets import SeedDatasetProvider
-from attacks import RTA
+from src.attacks import RTA
 
 
 async def attack_generator(
@@ -18,7 +18,7 @@ async def attack_generator(
     seed_dataset = await SeedDatasetProvider.fetch_datasets_async(
         dataset_names=[seed_name]
     )
-    seeds = seed_dataset[0].seeds[:2] # TODO: remove the hardcoded number of seeds
+    seeds = seed_dataset[0].seeds
     num_samples = cfg.get("seed", {}).get("num_samples", 3)
 
     # Step 3: Make the attack

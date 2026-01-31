@@ -1,11 +1,11 @@
 {
     "seed": {
         "name": "adv_bench",
-        "num_samples": 2
+        "num_samples": 3
     },
     "attack": {
         "name": "rta",
-        "max_turns": 2,
+        "max_turns": 3,
         "adversarial": {
             "type": "ollama",
             "model_name": "llama3.1",
