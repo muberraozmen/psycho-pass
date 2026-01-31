@@ -42,7 +42,7 @@ async def attack_generator(
                     "harm_categories": seed.harm_categories if seed.harm_categories else None,
                 }
             )
-            print(f"Attack {_ + 1} of {counter} of {total_num_attacks} completed")
+            print(f"Attack {counter + 1} of {total_num_attacks} completed")
             counter += 1
             
     # TODO: add the parallel execution logic based on together.ai's cookbook
