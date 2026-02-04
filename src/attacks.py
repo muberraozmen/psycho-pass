@@ -7,7 +7,6 @@ from pyrit.executor.attack import (
     RedTeamingAttack,
     RTASystemPromptPaths,
 )
-from pyrit.executor.attack import AttackScoringConfig
 from pyrit.score import SelfAskTrueFalseScorer, TrueFalseQuestion
 
 
@@ -34,7 +33,7 @@ def build_chat_bots(cfg: dict) -> OpenAIChatTarget:
 
 
 class RTA:
-    def __init__(self, cfg: dict):
+    def __init__(self, cfg: dict) -> None:
         # Build Chat Bots
         self.adversarial_bot = build_chat_bots(cfg.get("adversarial"))
         self.scoring_bot = build_chat_bots(cfg.get("scoring"))
