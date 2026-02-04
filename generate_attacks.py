@@ -51,10 +51,10 @@ async def generate_attacks(
     num_samples = cfg.get("seed", {}).get("num_samples", 3)
 
     if debug:
-        seeds = seeds[:15]
+        seeds = seeds[:3]
         num_samples = 1
         logger.warning("-" * 40)
-        logger.warning("DEBUG MODE: ONLY PROCESSING 15 SEEDS AND 1 SAMPLE PER SEED")
+        logger.warning("DEBUG MODE: ONLY PROCESSING 3 SEEDS AND 1 SAMPLE PER SEED")
         logger.warning("-" * 40)
 
     # Step 3: Build Attack
@@ -92,9 +92,9 @@ async def generate_attacks(
     for result in results:
         if isinstance(result, Exception):
             system_errors += 1
-        elif str(result.score.score_value).lower() == "true":
+        elif result.outcome.value == "success":
             successful_attacks += 1
-        elif str(result.score.score_value).lower() == "false":
+        elif result.outcome.value == "failure":
             failed_attacks += 1
         else:
             unknown_attacks += 1
