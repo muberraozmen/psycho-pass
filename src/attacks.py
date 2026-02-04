@@ -13,6 +13,14 @@ from pyrit.score import SelfAskTrueFalseScorer, TrueFalseQuestion
 __all__ = ["RTA"]
 
 
+class Attack:
+    def __init__(self, cfg: dict) -> None:
+        self.cfg = cfg
+
+    async def run(self, seed: Seed) -> AttackResult:
+        raise NotImplementedError
+
+
 def build_chat_bots(cfg: dict) -> OpenAIChatTarget:    
     if cfg.get("type") == "ollama":
         return OpenAIChatTarget(
@@ -32,7 +40,8 @@ def build_chat_bots(cfg: dict) -> OpenAIChatTarget:
         raise ValueError(f"Unsupported model type: {cfg.get('type')}")
 
 
-class RTA:
+
+class RTA(Attack):
     def __init__(self, cfg: dict) -> None:
         # Build Chat Bots
         self.adversarial_bot = build_chat_bots(cfg.get("adversarial"))
@@ -80,4 +89,5 @@ class RTA:
         )
 
         return result
+
 
