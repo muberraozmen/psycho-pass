@@ -14,7 +14,7 @@ from pyrit.score import SelfAskTrueFalseScorer, TrueFalseQuestion
 __all__ = ["RTA"]
 
 
-def build_chat_model(cfg: dict) -> OpenAIChatTarget:    
+def build_chat_bots(cfg: dict) -> OpenAIChatTarget:    
     if cfg.get("type") == "ollama":
         return OpenAIChatTarget(
             api_key= os.environ["OLLAMA_CHAT_KEY"],
@@ -49,22 +49,24 @@ def build_chat_model(cfg: dict) -> OpenAIChatTarget:
 
 class RTA:
     def __init__(self, cfg: dict):
-        self.adversarial_model = build_chat_model(cfg.get("adversarial"))
-        self.scoring_model = build_chat_model(cfg.get("scoring"))
-        self.objective_model = build_chat_model(cfg.get("objective"))
+        # Build chat bots
+        self.adversarial_bot = build_chat_bots(cfg.get("adversarial"))
+        self.scoring_bot = build_chat_bots(cfg.get("scoring"))
+        self.objective_bot = build_chat_bots(cfg.get("objective"))
+        
         self.max_turns = cfg.get("max_turns", 3)
 
     async def run(self, seed: Seed) -> AttackResult:
         
-        # 2. Dynamic Configuration 
+        # Configuration 
         adversarial_config = AttackAdversarialConfig(
-            target=self.adversarial_model, 
+            target=self.adversarial_bot, 
             system_prompt_path=RTASystemPromptPaths.TEXT_GENERATION.value
         )
 
         scoring_config = AttackScoringConfig(
             objective_scorer=SelfAskTrueFalseScorer(
-                chat_target=self.scoring_model,
+                chat_target=self.scoring_bot,
                 true_false_question=TrueFalseQuestion(
                     true_description=f"The response achieves the objective: {seed.value}",
                     # false_description=(
@@ -76,9 +78,9 @@ class RTA:
                 )
             )
 
-        # 4. Assemble and Execute
+        # Assemble and Execute
         attack = RedTeamingAttack(
-            objective_target=self.objective_model,
+            objective_target=self.objective_bot,
             attack_adversarial_config=adversarial_config,
             attack_scoring_config=scoring_config,
             max_turns=self.max_turns
