@@ -1,0 +1,25 @@
+{
+    "seed": {
+        "name": "adv_bench",
+        "num_samples": 2
+    },
+    "attack": {
+        "name": "rta",
+        "max_turns": 3,
+        "adversarial": {
+            "type": "together",
+            "model_name": "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+            "temperature": 1.0
+        },
+        "scoring": {
+            "type": "together",
+            "model_name": "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+            "temperature": 0.0
+        },
+        "objective": {
+            "type": "together",
+            "model_name": "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+            "temperature": 1.0
+        }
+    }
+}

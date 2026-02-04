@@ -76,21 +76,25 @@ async def generate_attacks(
     system_errors = 0
     successful_attacks = 0
     failed_attacks = 0
+    unknown_attacks = 0
 
     for result in results:
         if isinstance(result, Exception):
             system_errors += 1
-        elif result.outcome.value == "success":
+        elif str(result.score.score_value).lower() == "true":
             successful_attacks += 1
-        else:
+        elif str(result.score.score_value).lower() == "false":
             failed_attacks += 1
+        else:
+            unknown_attacks += 1
 
     logger.warning("-" * 40)
     logger.warning(f"BATCH COMPLETE")
     logger.warning(f"Total Attempts: {len(results)}")
     logger.warning(f"  [+] # of Successful Attacks: {successful_attacks}")
-    logger.warning(f"  [-] # of Failed Attacks:    {failed_attacks}")
-    logger.warning(f"  [!] # of System Errors:        {system_errors}")
+    logger.warning(f"  [-] # of Failed Attacks:     {failed_attacks}")
+    logger.warning(f"  [?] # of Unknown Attacks:    {unknown_attacks}")
+    logger.warning(f"  [!] # of System Errors:      {system_errors}")
     logger.warning("-" * 40)
 
 
