@@ -13,12 +13,9 @@ from tenacity import (
 )
 from pyrit.setup import initialize_pyrit_async
 from pyrit.datasets import SeedDatasetProvider
-from src.attacks import build_red_teaming_attack, run_attack
+from src.attacks import *
 
-logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
-
-
 
 @retry(
     retry=retry_if_exception_type(Exception),
@@ -30,7 +27,7 @@ async def run_managed_attack(semaphore, attack, seed, idx):
     async with semaphore:
         logger.warning(f"Starting attack {idx}...")
         start_time = datetime.now()
-        result = await run_attack(attack, seed)
+        result = await attack.run(seed)
         end_time = datetime.now()
         duration = end_time - start_time
         logger.warning(f"Finished attack {idx} in {int(duration.total_seconds())} seconds.")
@@ -40,7 +37,7 @@ async def run_managed_attack(semaphore, attack, seed, idx):
 async def generate_attacks(
     db_path: str,
     cfg: dict,
-    max_concurrency: int = 1, # Default to 1 for safety
+    max_concurrency: int = 1, 
     ) -> None:
 
     # Step 1: Initialize DB
@@ -49,12 +46,12 @@ async def generate_attacks(
     # Step 2: Fetch Dataset
     seed_name = cfg.get("seed", {}).get("name", "adv_bench")
     seed_dataset = await SeedDatasetProvider.fetch_datasets_async(dataset_names=[seed_name])
-    seeds = seed_dataset[0].seeds  ## TODO: remove debugger filter
+    seeds = seed_dataset[0].seeds[:15]  ## TODO: remove debugger filter
     num_samples = cfg.get("seed", {}).get("num_samples", 3)
 
     # Step 3: Build Attack
     if cfg["attack"].get("name") == "rta":
-        attack = build_red_teaming_attack(cfg["attack"])
+        attack = RTA(cfg["attack"])
     else:
         raise ValueError(f"Unsupported attack name: {cfg['attack']['name']}")
 
