@@ -45,11 +45,11 @@ Common pitfalls
 
 ## Dataset Generation
 
-Given a config, e.g. `./configs/rta_base.json` use `generate.py` to generate a set of attacks. This script initializes the database, loads config, and generates attacks based on seeds and attack settings.
+Given a config, e.g. `./configs/rta_base.json` use `generate_attacks.py` to generate a set of attacks. This script initializes the database, loads config, and generates attacks based on seeds and attack settings.
 
 Example usage:
 ```bash
-python generate.py --db_root ./db --config_path ./configs/rta_base.json
+python generate_attacks.py --db_root ./db --config_path ./configs/rta_base.json
 ```
 
 - `--db_root` specifies the output directory for results/database (a timestamped folder with `.db` and config snapshot will be created).
@@ -58,5 +58,14 @@ python generate.py --db_root ./db --config_path ./configs/rta_base.json
 **Notes**
 - Each run creates a new results directory under `db_root` for reproducibility.
 - Ensure environment variables are set or provided in `.env` for the corresponding models requested, see `attacks.py/build_chat_model`.
+
+Example `.env`:
+```bash
+OLLAMA_CHAT_KEY="ollama"
+OLLAMA_CHAT_ENDPOINT="http://localhost:11434/v1"
+
+TOGETHER_CHAT_KEY=<YOUR_API_KEY>
+TOGETHER_CHAT_ENDPOINT="https://api.together.xyz/v1/chat/completions"
+```
 
 
