@@ -1,7 +1,7 @@
 {
     "seed": {
         "name": "adv_bench",
-        "num_samples": 2
+        "num_samples": 3
     },
     "attack": {
         "name": "rta",

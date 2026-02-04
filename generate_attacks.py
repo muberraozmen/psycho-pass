@@ -52,8 +52,9 @@ async def generate_attacks(
 
     if debug:
         seeds = seeds[:15]
+        num_samples = 1
         logger.warning("-" * 40)
-        logger.warning("DEBUG MODE: ONLY PROCESSING 15 SEEDS")
+        logger.warning("DEBUG MODE: ONLY PROCESSING 15 SEEDS AND 1 SAMPLE PER SEED")
         logger.warning("-" * 40)
 
     # Step 3: Build Attack
