@@ -13,7 +13,7 @@ from pyrit.score import SelfAskTrueFalseScorer, TrueFalseQuestion
 __all__ = ["RTA"]
 
 
-class Attack:
+class AttackRunner:
     def __init__(self, cfg: dict) -> None:
         self.cfg = cfg
 
@@ -41,7 +41,7 @@ def build_chat_bots(cfg: dict) -> OpenAIChatTarget:
 
 
 
-class RTA(Attack):
+class RTA(AttackRunner):
     def __init__(self, cfg: dict) -> None:
         # Build Chat Bots
         self.adversarial_bot = build_chat_bots(cfg.get("adversarial"))
