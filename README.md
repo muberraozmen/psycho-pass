@@ -19,6 +19,7 @@ If this returns JSON, the endpoint is live. If you see 404, your Ollama build/co
 uv venv --python 3.12.8
 source .venv/bin/activate
 uv pip install pyrit==0.10.0
+uv pip install tenacity==9.1.2
 ```
 
 3. Export the environment variables 
