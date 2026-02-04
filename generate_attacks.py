@@ -38,6 +38,7 @@ async def generate_attacks(
     db_path: str,
     cfg: dict,
     max_concurrency: int = 1, 
+    debug: bool = False,
     ) -> None:
 
     # Step 1: Initialize DB
@@ -46,8 +47,14 @@ async def generate_attacks(
     # Step 2: Fetch Dataset
     seed_name = cfg.get("seed", {}).get("name", "adv_bench")
     seed_dataset = await SeedDatasetProvider.fetch_datasets_async(dataset_names=[seed_name])
-    seeds = seed_dataset[0].seeds[:15]  ## TODO: remove debugger filter
+    seeds = seed_dataset[0].seeds
     num_samples = cfg.get("seed", {}).get("num_samples", 3)
+
+    if debug:
+        seeds = seeds[:15]
+        logger.warning("-" * 40)
+        logger.warning("DEBUG MODE: ONLY PROCESSING 15 SEEDS")
+        logger.warning("-" * 40)
 
     # Step 3: Build Attack
     if cfg["attack"].get("name") == "rta":
@@ -55,7 +62,7 @@ async def generate_attacks(
     else:
         raise ValueError(f"Unsupported attack name: {cfg['attack']['name']}")
 
-    # Step 4: Build Queue with Semaphore
+    # Step 4: Build Queue
     semaphore = asyncio.Semaphore(max_concurrency)
 
     tasks = []
@@ -67,8 +74,11 @@ async def generate_attacks(
             tasks.append(run_managed_attack(semaphore, attack, seed, counter))
     
     # Step 5: Run
+    logger.warning("-" * 40)
+    logger.warning(f"BATCH STARTING")
     logger.warning(f"Total attacks to generate: {len(tasks)} with max concurrency: {max_concurrency}.")
     logger.warning(f"Destination: {db_path}")
+    logger.warning("-" * 40)
     
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -103,7 +113,7 @@ if __name__ == "__main__":
     parser.add_argument("--db_root", type=str, default="./db")
     parser.add_argument("--config_path", type=str, default="./configs/rta_base.json")
     parser.add_argument("--max_concurrency", type=int, default=1)
-
+    parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
     with open(args.config_path, "r") as f:
@@ -130,4 +140,5 @@ if __name__ == "__main__":
         cfg=cfg,
         db_path=str(db_dir / "attacks.db"),
         max_concurrency=args.max_concurrency,
+        debug=args.debug,
     ))

@@ -35,7 +35,7 @@ def build_chat_bots(cfg: dict) -> OpenAIChatTarget:
 
 class RTA:
     def __init__(self, cfg: dict):
-        # Build chat bots
+        # Build Chat Bots
         self.adversarial_bot = build_chat_bots(cfg.get("adversarial"))
         self.scoring_bot = build_chat_bots(cfg.get("scoring"))
         self.objective_bot = build_chat_bots(cfg.get("objective"))
@@ -49,7 +49,6 @@ class RTA:
             target=self.adversarial_bot, 
             system_prompt_path=RTASystemPromptPaths.TEXT_GENERATION.value
         )
-
         scoring_config = AttackScoringConfig(
             objective_scorer=SelfAskTrueFalseScorer(
                 chat_target=self.scoring_bot,
@@ -64,7 +63,7 @@ class RTA:
                 )
             )
 
-        # Assemble and Execute
+        # Assemble Attack
         attack = RedTeamingAttack(
             objective_target=self.objective_bot,
             attack_adversarial_config=adversarial_config,
@@ -72,6 +71,7 @@ class RTA:
             max_turns=self.max_turns
         )
 
+        # Execute Attack
         result = await attack.execute_async(
             objective=seed.value, 
             memory_labels={
