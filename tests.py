@@ -8,20 +8,19 @@ from pyrit.setup.initializers import SimpleInitializer
 from pyrit.executor.attack import PromptSendingAttack
 
 
-DB_PATH = Path("./db")
+EXPERIMENT_DIR = Path("./experiments/tests/")
 
 
 async def test_initialization() -> None:
     # Create the database directory if it doesn't exist
-    DB_PATH.mkdir(parents=True, exist_ok=True)
-    assert DB_PATH.exists() and DB_PATH.is_dir()
+    EXPERIMENT_DIR.mkdir(parents=True, exist_ok=True)
+    assert EXPERIMENT_DIR.exists() and EXPERIMENT_DIR.is_dir()
 
-    db_file = DB_PATH / "test.db"
+    db_file = EXPERIMENT_DIR / "memory.db"
     await initialize_pyrit_async(
         memory_db_type="SQLite",
         db_path=str(db_file),
-        # TODO: add the initializer once OpenAI Chat API is added to .env
-        # initializers=[SimpleInitializer()],
+        initializers=[SimpleInitializer()],
     )
     
     assert db_file.exists()
@@ -29,12 +28,7 @@ async def test_initialization() -> None:
 
 
 async def test_connectivity() -> str:
-    target = OpenAIChatTarget(
-        # TODO: remove assignments once OpenAI Chat API is added to .env
-        api_key=os.environ["OLLAMA_CHAT_KEY"],
-        endpoint=os.environ["OLLAMA_CHAT_ENDPOINT"],
-        model_name=os.environ["OLLAMA_CHAT_MODEL"],
-    )
+    target = OpenAIChatTarget()
 
     attack = PromptSendingAttack(objective_target=target)
 
@@ -42,7 +36,7 @@ async def test_connectivity() -> str:
     result = await attack.execute_async(objective="Say hello in one sentence.")
 
     # Testing the memory database
-    db_file = DB_PATH / "test.db"
+    db_file = EXPERIMENT_DIR / "memory.db"
     assert db_file.exists()
     memory = SQLiteMemory(db_path=str(db_file))
 
