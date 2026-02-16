@@ -60,7 +60,7 @@ class EmbeddingsCalculator:
             json.dump(self.cfg, f, indent=4)
 
     def _make_encoder(self):
-        # Robust config retrieval (handles root vs 'encoder' subkey)
+        """Initiates encoder based on config."""
         encoder_cfg = self.cfg.get("encoder", self.cfg)
         encoder_name = encoder_cfg.get("name", "tfidf")
         
@@ -70,8 +70,8 @@ class EmbeddingsCalculator:
             raise ValueError(f"Unsupported encoder name: {encoder_name}")
 
     def _calculate_metrics(self):
+        """Calculates trajectory metrics and logs a summary."""
         # Calculate metrics
-        logger.info(f"Evaluating trajectory metrics...")        
         evaluate_trajectory(
             embeddings_path=str(self.experiment_dir) + "/embeddings.parquet", 
             metrics_path=str(self.experiment_dir) + "/metrics.csv"
@@ -95,8 +95,7 @@ class EmbeddingsCalculator:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--load_from", type=str, default="./experiments/dataset_feb3_1770230537", 
-                        help="Path to the experiment folder containing dataset.parquet")
+    parser.add_argument("--load_from", type=str, required=True, help="Path to the experiment folder containing dataset.parquet")
     parser.add_argument("--config_path", type=str, default="./configs/embeddings_base.json")
     args = parser.parse_args()
 
@@ -104,13 +103,11 @@ def main():
     with open(config_path, "r") as f:
         cfg = json.load(f)
     
-    # Setup Paths
     timestamp = int(datetime.now().timestamp())
     run_name = f"{config_path.stem}_{timestamp}"
     load_path = Path(args.load_from)
     experiment_dir = load_path / run_name
 
-    # Calculate embeddings
     calculator = EmbeddingsCalculator(
         load_from=load_path,
         experiment_dir=experiment_dir,

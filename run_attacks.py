@@ -121,6 +121,7 @@ class DatasetGenerator:
             raise ValueError(f"Unsupported attack name: {attack_name}")
 
     def _create_tasks(self, seeds, num_samples, attack):
+        """Makes the queue of tasks."""
         semaphore = asyncio.Semaphore(self.max_concurrency)
         tasks = []
         counter = 0
@@ -179,8 +180,7 @@ class DatasetGenerator:
         logger.info("-" * 40)
 
     def _process_output(self):
-        """Convert memory.db to parquet dataset"""
-        
+        """Converts memory.db to parquet dataset"""
         memory2parquet(
             memory_db_path=self.experiment_dir / "memory.db", 
             parquet_path=self.experiment_dir / "dataset.parquet"
