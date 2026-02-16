@@ -34,7 +34,7 @@ async def _execute_single_attack(semaphore, attack, seed, idx):
     Standalone function to avoid 'self' binding issues with @retry.
     """
     async with semaphore:
-        logger.warning(f"Starting attack {idx}...")
+        logger.info(f"Starting attack {idx}...")
         start_time = datetime.now()
         
         # Execute the attack
@@ -42,7 +42,7 @@ async def _execute_single_attack(semaphore, attack, seed, idx):
         
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
-        logger.warning(f"Finished attack {idx} in {int(duration)} seconds.")
+        logger.info(f"Finished attack {idx} in {int(duration)} seconds.")
         return result
 
 
@@ -66,9 +66,9 @@ class DatasetGenerator:
         
         # 2. Get the Root Logger
         root_logger = logging.getLogger()
-        root_logger.setLevel(logging.WARNING)
+        root_logger.setLevel(logging.INFO)
         
-        # 3. Clear existing handlers (to avoid double printing to console)
+        # 3. Clear existing handlers 
         if root_logger.handlers:
             root_logger.handlers = []
             
@@ -102,9 +102,9 @@ class DatasetGenerator:
         seeds = seed_dataset[0].seeds
 
         if self.debug:
-            logger.warning("-" * 40)
-            logger.warning("DEBUG MODE: Limiting to 3 seeds and 1 sample/seed")
-            logger.warning("-" * 40)
+            logger.info("-" * 40)
+            logger.info("DEBUG MODE: Limiting to 3 seeds and 1 sample/seed")
+            logger.info("-" * 40)
             seeds = seeds[:3]
             num_samples = 1
 
@@ -125,12 +125,12 @@ class DatasetGenerator:
         tasks = []
         counter = 0
 
-        logger.warning("-" * 40)
-        logger.warning(f"BATCH STARTING")
-        logger.warning(f"Seed Count: {len(seeds)} | Samples per Seed: {num_samples}")
-        logger.warning(f"Max Concurrency: {self.max_concurrency}")
-        logger.warning(f"Output: {self.experiment_dir}")
-        logger.warning("-" * 40)
+        logger.info("-" * 40)
+        logger.info(f"BATCH STARTING")
+        logger.info(f"Seed Count: {len(seeds)} | Samples per Seed: {num_samples}")
+        logger.info(f"Max Concurrency: {self.max_concurrency}")
+        logger.info(f"Output: {self.experiment_dir}")
+        logger.info("-" * 40)
 
         for seed in seeds:
             for _ in range(num_samples):
@@ -153,7 +153,7 @@ class DatasetGenerator:
         for res in results:
             if isinstance(res, Exception):
                 stats["errors"] += 1
-                logger.warning(f"Attack failed with error: {res}")
+                logger.info(f"Attack failed with error: {res}")
                 continue
             
             # Robust outcome checking (Handles String vs Enum)
@@ -169,15 +169,24 @@ class DatasetGenerator:
             except AttributeError:
                 stats["unknown"] += 1
 
-        logger.warning("-" * 40)
-        logger.warning(f"BATCH COMPLETE")
-        logger.warning(f"Total Attempts: {len(results)}")
-        logger.warning(f"  [+] Success (Jailbreaks): {stats['success']}")
-        logger.warning(f"  [-] Failed (Refusals):    {stats['failure']}")
-        logger.warning(f"  [?] Unknown outcomes:     {stats['unknown']}")
-        logger.warning(f"  [!] System Errors:        {stats['errors']}")
-        logger.warning("-" * 40)
+        logger.info("-" * 40)
+        logger.info(f"BATCH COMPLETE")
+        logger.info(f"Total Attempts: {len(results)}")
+        logger.info(f"  [+] Success (Jailbreaks): {stats['success']}")
+        logger.info(f"  [-] Failed (Refusals):    {stats['failure']}")
+        logger.info(f"  [?] Unknown outcomes:     {stats['unknown']}")
+        logger.info(f"  [!] System Errors:        {stats['errors']}")
+        logger.info("-" * 40)
 
+    def _process_output(self):
+        """Convert memory.db to parquet dataset"""
+        
+        memory2parquet(
+            memory_db_path=self.experiment_dir / "memory.db", 
+            parquet_path=self.experiment_dir / "dataset.parquet"
+            )
+        logger.info(f"The dataset is dumped as {self.experiment_dir}/dataset.parquet.")
+    
     async def run(self):
         """Main execution flow."""
         await self._initialize_memory()
@@ -187,7 +196,7 @@ class DatasetGenerator:
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         self._summarize_results(results)
-
+        self._process_output()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -198,10 +207,9 @@ def main():
     args = parser.parse_args()
 
     config_path = Path(args.config_path)
-
     with open(config_path, "r") as f:
         cfg = json.load(f)
-
+    
     timestamp = int(datetime.now().timestamp())
     run_name = f"{config_path.stem}_{timestamp}"
     experiment_dir = Path(args.save_to) / run_name
@@ -214,12 +222,6 @@ def main():
     )
 
     asyncio.run(generator.run())
-
-    # Convert memory.db to parquet dataset
-    memory2parquet(
-        memory_db_path=experiment_dir / "memory.db", 
-        parquet_path=experiment_dir / "dataset.parquet"
-        )
 
 if __name__ == "__main__":
     main()

@@ -149,16 +149,10 @@ Example: `configs/embeddings_base.json`
 ## Inspecting a run
 
 ```python
-from src.helpers import describe_db, view_conversations
+from helpers import describe_db, view_conversations
 
 describe_db("./experiments/dataset_base_<timestamp>/memory.db")
 view_conversations("./experiments/dataset_base_<timestamp>/memory.db", n_conversations=5)
-```
-
-Or from the shell:
-
-```bash
-python -c "from helpers import describe_db; describe_db('./experiments/dataset_base_<timestamp>/memory.db')"
 ```
 
 

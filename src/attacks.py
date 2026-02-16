@@ -40,7 +40,7 @@ def build_chat_bot(cfg: dict) -> OpenAIChatTarget:
 # Base Class
 # ------------------------------------------------------------
 class BaseAttack:
-    def __init__(self, cfg: Dict) -> None:
+    def __init__(self, cfg: dict) -> None:
         self.cfg = cfg
     
     async def run(self, seed: Seed) -> AttackResult:
@@ -50,7 +50,7 @@ class BaseAttack:
 # RTA Class
 # ------------------------------------------------------------
 class RTA(BaseAttack):
-    def __init__(self, cfg: Dict) -> None:
+    def __init__(self, cfg: dict) -> None:
         super().__init__(cfg)
 
         # Build Chat Bots

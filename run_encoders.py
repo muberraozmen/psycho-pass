@@ -20,13 +20,43 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class EmbeddingsCalculator:
-    def __init__(self, load_from: Path, save_to: Path, cfg: dict):
+    def __init__(self, load_from: Path, experiment_dir: Path, cfg: dict):
         self.load_from = load_from
-        self.save_to = save_to
+        self.experiment_dir = experiment_dir
         self.cfg = cfg
 
+        self.experiment_dir.mkdir(parents=True, exist_ok=True)
+        self._setup_logging()
+        self._dump_config()
+    
+    def _setup_logging(self):
+        """Configures logging to file and console."""
+        log_file = self.experiment_dir / "out.log"
+        
+        # 1. Create your Formatter
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        
+        # 2. Get the Root Logger
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.INFO)
+        
+        # 3. Clear existing handlers 
+        if root_logger.handlers:
+            root_logger.handlers = []
+            
+        # 4. Add File Handler
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+        
+        # 5. Add Console Handler
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        root_logger.addHandler(console_handler)
+
     def _dump_config(self):
-        with open(self.save_to / "config.json", "w") as f:
+        """Saves the configuration to the experiment directory."""
+        with open(self.experiment_dir / "config.json", "w") as f:
             json.dump(self.cfg, f, indent=4)
 
     def _make_encoder(self):
@@ -39,16 +69,27 @@ class EmbeddingsCalculator:
         else:
             raise ValueError(f"Unsupported encoder name: {encoder_name}")
 
-    def _summarize_results(self):
+    def _calculate_metrics(self):
+        # Calculate metrics
+        logger.info(f"Evaluating trajectory metrics...")        
+        evaluate_trajectory(
+            embeddings_path=str(self.experiment_dir) + "/embeddings.parquet", 
+            metrics_path=str(self.experiment_dir) + "/metrics.csv"
+            )
+        logger.info(f"Trajectory metrics saved as {self.experiment_dir}/metrics.csv")
 
-        pass
+        # Log comparative stats
+        logger.info("Summary")
+        full_report = log_comparative_stats(metrics_csv_path=str(self.experiment_dir) + "/metrics.csv")
+        logger.info(full_report)
 
     def run(self):
+        """Main execution flow."""
         encoder = self._make_encoder()
-        
         logger.info(f"Running encoder...")
-        encoder.run(str(self.load_from), str(self.save_to))
-        logger.info(f"Embeddings are saved as {self.save_to}/embeddings.parquet")
+        encoder.run(str(self.load_from), str(self.experiment_dir))
+        logger.info(f"Embeddings are saved as {self.experiment_dir}/embeddings.parquet")
+        self._calculate_metrics()
         
 
 
@@ -59,49 +100,23 @@ def main():
     parser.add_argument("--config_path", type=str, default="./configs/embeddings_base.json")
     args = parser.parse_args()
 
-    # Load Config
     config_path = Path(args.config_path)
-    if not config_path.exists():
-        raise FileNotFoundError(f"Config not found at {config_path}")
-
     with open(config_path, "r") as f:
         cfg = json.load(f)
     
     # Setup Paths
     timestamp = int(datetime.now().timestamp())
     run_name = f"{config_path.stem}_{timestamp}"
-    
-    # The output folder is created INSIDE the experiment folder
     load_path = Path(args.load_from)
-    save_to = load_path / run_name
-
-    # Setup Logging
-    save_to.mkdir(parents=True, exist_ok=True)
-    fh = logging.FileHandler(save_to / "out.log")
-    fh.setFormatter(logging.Formatter('%(asctime)s - %(message)s', '%H:%M:%S'))
-    logger.addHandler(fh)
+    experiment_dir = load_path / run_name
 
     # Calculate embeddings
     calculator = EmbeddingsCalculator(
         load_from=load_path,
-        save_to=save_to,
+        experiment_dir=experiment_dir,
         cfg=cfg
     )
     calculator.run()
-
-    # Calculate metrics
-    logger.info(f"Evaluating trajectory metrics...")        
-    evaluate_trajectory(
-        embeddings_path=str(save_to) + "/embeddings.parquet", 
-        metrics_path=str(save_to) + "/metrics.csv"
-        )
-    logger.info(f"Trajectory metrics saved as {save_to}/metrics.csv")
-
-    # Log comparative stats
-    logger.info("Summary")
-    full_report = log_comparative_stats(metrics_csv_path=str(save_to) + "/metrics.csv")
-    logger.info(full_report)
-
 
 if __name__ == "__main__":
     main()

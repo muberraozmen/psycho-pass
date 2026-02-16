@@ -78,6 +78,7 @@ def view_conversations(db_path: str, n_conversations: int = 10) -> None:
             print("------------------------------------------------")
             print(f"TURN {message.sequence} - ROLE {message.role}")
             print(f"{message.get_values()[0]}")
+            
 
 if __name__ == "__main__":
     describe_db("./experiments/dataset_feb3_1770230537/memory.db")
