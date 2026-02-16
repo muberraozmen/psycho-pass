@@ -61,6 +61,7 @@ def memory2parquet(memory_db_path: str, parquet_path: str):
         # 5. Build the Data Row
         row = {
             "conversation_id": str(attack.conversation_id),
+            "objective": attack.objective,
             "is_success": "success" in outcome_str,
             "is_failure": "failure" in outcome_str,
             "turn_count": len(conversation_history),
@@ -80,3 +81,5 @@ if __name__ == "__main__":
     parser.add_argument("--parquet_path", type=str, required=True)
     args = parser.parse_args()
     memory2parquet(args.memory_db_path, args.parquet_path)
+
+# python src/processors.py --memory_db_path /Users/muberraozmen/Development/psycho-pass/experiments/dataset_feb3_1770230537/memory.db --parquet_path /Users/muberraozmen/Development/psycho-pass/experiments/dataset_feb3_1770230537/dataset.parquet

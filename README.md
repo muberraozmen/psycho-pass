@@ -13,11 +13,6 @@ Red-teaming pipeline: generate multi-turn jailbreak attacks, export conversation
 | **Embeddings** | `run_encoders.py` | Experiment dir containing `dataset.parquet` + encoder config | `embeddings.parquet` (TF-IDF or other encoder) |
 | **Trajectory evaluation** | (built into `run_encoders.py`) | `embeddings.parquet` | `metrics.csv` + comparative report (success vs failure) |
 
-**Helpers**
-
-- `helpers.py`: `describe_db(db_path)`, `view_conversations(db_path, n_conversations)` for inspecting a `memory.db`.
-- `tests.py`: PyRIT init + connectivity check against an OpenAI-compatible endpoint (e.g. Ollama).
-
 ---
 
 ## Setup
@@ -42,12 +37,13 @@ If you get JSON, the endpoint is up. If you see 404, your Ollama build does not 
 
 ```bash
 uv venv --python 3.12
-source .venv/bin/activate   # or .venv\Scripts\activate on Windows
+source .venv/bin/activate   
 uv pip install pyrit==0.10.0
 uv pip install tenacity==9.1.2
 uv pip install torch==2.10.0
 uv pip install scikit-learn==1.8.0
-uv pip install pyarrow pandas
+uv pip install pyarrow==23.0.0 
+uv pip install pandas==3.0.0
 ```
 
 ### 3. Environment variables
@@ -149,7 +145,7 @@ Example: `configs/embeddings_base.json`
 ## Inspecting a run
 
 ```python
-from helpers import describe_db, view_conversations
+from src.helpers import describe_db, view_conversations
 
 describe_db("./experiments/dataset_base_<timestamp>/memory.db")
 view_conversations("./experiments/dataset_base_<timestamp>/memory.db", n_conversations=5)
