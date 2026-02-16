@@ -1,9 +1,9 @@
 import argparse
-import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
 
+import asyncio
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -15,7 +15,6 @@ from pyrit.setup import initialize_pyrit_async
 from pyrit.datasets import SeedDatasetProvider
 from src.attacks import *
 from src.processors import memory2parquet
-
 
 import logging
 logger = logging.getLogger(__name__)

@@ -1,18 +1,14 @@
 import argparse
 import json 
-import logging
-import pandas as pd
-import numpy as np
 from datetime import datetime
 from pathlib import Path
 
 from src.encoders import * 
 from src.metrics import evaluate_trajectory, log_comparative_stats
 
-import pdb
-
-# Configure Logging
+import logging
 logger = logging.getLogger(__name__)
+
 
 class EmbeddingsCalculator:
     def __init__(self, load_from: Path, experiment_dir: Path, cfg: dict):
@@ -85,8 +81,6 @@ class EmbeddingsCalculator:
         encoder.run(str(self.load_from), str(self.experiment_dir))
         logger.info(f"Embeddings are saved as {self.experiment_dir}/embeddings.parquet")
         self._calculate_metrics()
-        
-
 
 def main():
     parser = argparse.ArgumentParser()
