@@ -103,13 +103,13 @@ def main():
     with open(config_path, "r") as f:
         cfg = json.load(f)
     
+    load_from = Path(args.load_from)
     timestamp = int(datetime.now().timestamp())
     run_name = f"{config_path.stem}_{timestamp}"
-    load_path = Path(args.load_from)
-    experiment_dir = load_path / run_name
+    experiment_dir = Path(args.load_from) / run_name
 
     calculator = EmbeddingsCalculator(
-        load_from=load_path,
+        load_from=load_from,
         experiment_dir=experiment_dir,
         cfg=cfg
     )
