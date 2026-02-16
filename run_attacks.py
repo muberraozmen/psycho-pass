@@ -35,10 +35,7 @@ async def _execute_single_attack(semaphore, attack, seed, idx):
     async with semaphore:
         logger.info(f"Starting attack {idx}...")
         start_time = datetime.now()
-        
-        # Execute the attack
-        result = await attack.run(seed)
-        
+        result = await attack.run(seed)        
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
         logger.info(f"Finished attack {idx} in {int(duration)} seconds.")
@@ -143,26 +140,18 @@ class DatasetGenerator:
 
     def _summarize_results(self, results):
         """Logs the final statistics of the batch."""
-        stats = {
-            "success": 0,
-            "failure": 0,
-            "unknown": 0,
-            "errors": 0
-        }
+        stats = {"success": 0, "failure": 0, "unknown": 0, "errors": 0}
 
         for res in results:
             if isinstance(res, Exception):
                 stats["errors"] += 1
                 logger.info(f"Attack failed with error: {res}")
                 continue
-            
-            # Robust outcome checking (Handles String vs Enum)
             try:
-                outcome = str(res.outcome.value).lower() if hasattr(res.outcome, "value") else str(res.outcome).lower()
-                
-                if "success" in outcome or "true" in outcome:
+                outcome = str(res.outcome.value).lower()
+                if "success" in outcome:
                     stats["success"] += 1
-                elif "fail" in outcome or "false" in outcome:
+                elif "fail" in outcome:
                     stats["failure"] += 1
                 else:
                     stats["unknown"] += 1
