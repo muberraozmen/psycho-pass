@@ -12,11 +12,6 @@ from src.metrics import evaluate_trajectory, log_comparative_stats
 import pdb
 
 # Configure Logging
-logging.basicConfig(
-    level=logging.INFO, 
-    format='%(asctime)s - %(message)s',
-    datefmt='%H:%M:%S'
-)
 logger = logging.getLogger(__name__)
 
 class EmbeddingsCalculator:
