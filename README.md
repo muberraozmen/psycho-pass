@@ -80,7 +80,7 @@ TOGETHER_CHAT_ENDPOINT="https://api.together.xyz/v1"
 ### 4. Sanity check
 
 ```bash
-python tests.py
+python run_tests.py
 ```
 
 This creates `./experiments/tests/memory.db` and prints the latest test conversation.
@@ -149,7 +149,7 @@ Example: `configs/embeddings_base.json`
 ## Inspecting a run
 
 ```python
-from helpers import describe_db, view_conversations
+from src.helpers import describe_db, view_conversations
 
 describe_db("./experiments/dataset_base_<timestamp>/memory.db")
 view_conversations("./experiments/dataset_base_<timestamp>/memory.db", n_conversations=5)
