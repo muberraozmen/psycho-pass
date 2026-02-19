@@ -57,6 +57,8 @@ class EmbeddingsCalculator:
         
         if encoder_name == "tfidf":
             return TFIDFEncoder(encoder_cfg)
+        elif encoder_name == "bert":
+            return BertEncoder(encoder_cfg)
         else:
             raise ValueError(f"Unsupported encoder name: {encoder_name}")
 

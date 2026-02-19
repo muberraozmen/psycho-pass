@@ -1,0 +1,7 @@
+{
+    "encoder": {
+        "name": "bert",
+            "model_name": "bert-base-uncased",
+            "max_length": 512
+    }
+}

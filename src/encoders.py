@@ -1,7 +1,9 @@
 import pandas as pd
+import torch
 from sklearn.feature_extraction.text import TfidfVectorizer
+from transformers import AutoTokenizer, AutoModel
 
-__all__ = ["TFIDFEncoder"]
+__all__ = ["TFIDFEncoder", "BertEncoder"]
 
 # ------------------------------------------------------------
 # Base Class
@@ -72,6 +74,55 @@ class TFIDFEncoder(BaseEncoder):
         df = pd.read_parquet(load_from + "/dataset.parquet")
         self._fit(df["messages"])
         embeddings = self._encode(df["messages"])
+        df["embeddings"] = embeddings
+        df.to_parquet(save_to + "/embeddings.parquet", index=False, engine="pyarrow")
+        return df
+
+
+# ------------------------------------------------------------
+# BERT Encoder
+# ------------------------------------------------------------
+class BertEncoder(BaseEncoder):
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        model_name = cfg.get("model_name", "bert-base-uncased")
+        
+        # Load model and tokenizer directly to CPU (default behavior)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModel.from_pretrained(model_name)
+        self.model.eval()  # Set to evaluation mode for inference
+
+    def _encode(self, conversations: pd.Series) -> list[list[list[float]]]:
+        results = []
+        
+        with torch.no_grad():
+            for msg_list in conversations:
+                texts = [msg.get("content", "") for msg in msg_list]
+                
+                if not texts:
+                    results.append([])
+                    continue
+                
+                inputs = self.tokenizer(
+                    texts, 
+                    padding=True, 
+                    truncation=True, 
+                    max_length=self.cfg.get("max_length", 512), 
+                    return_tensors="pt"
+                )
+                
+                outputs = self.model(**inputs)
+                embeddings = outputs.last_hidden_state[:, 0, :]
+                
+                results.append(embeddings.numpy().tolist())
+                
+        return results
+
+    def run(self, load_from: str, save_to: str) -> pd.DataFrame:
+        df = pd.read_parquet(load_from + "/dataset.parquet")
+        
+        embeddings = self._encode(df["messages"])
+        
         df["embeddings"] = embeddings
         df.to_parquet(save_to + "/embeddings.parquet", index=False, engine="pyarrow")
         return df
