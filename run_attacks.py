@@ -1,5 +1,6 @@
 import argparse
 import json
+import yaml
 from datetime import datetime
 from pathlib import Path
 
@@ -28,10 +29,6 @@ logging.getLogger("httpx").setLevel(logging.ERROR)
     stop=stop_after_attempt(3)
 )
 async def _execute_single_attack(semaphore, attack, seed, idx):
-    """
-    Executes a single attack iteration with retry logic.
-    Standalone function to avoid 'self' binding issues with @retry.
-    """
     async with semaphore:
         logger.info(f"Starting attack {idx}...")
         start_time = datetime.now()
@@ -54,42 +51,33 @@ class DatasetGenerator:
         self._dump_config()
     
     def _setup_logging(self):
-        """Configures logging to file and console."""
         log_file = self.experiment_dir / "out.log"
         
-        # 1. Create your Formatter
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
         
-        # 2. Get the Root Logger
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.INFO)
         
-        # 3. Clear existing handlers 
         if root_logger.handlers:
             root_logger.handlers = []
             
-        # 4. Add File Handler
         file_handler = logging.FileHandler(log_file)
         file_handler.setFormatter(formatter)
         root_logger.addHandler(file_handler)
         
-        # 5. Add Console Handler
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
         root_logger.addHandler(console_handler)
 
     def _dump_config(self):
-        """Saves the configuration to the experiment directory."""
         with open(self.experiment_dir / "config.json", "w") as f:
             json.dump(self.cfg, f, indent=4)
 
     async def _initialize_memory(self):
-        """Initializes the PyRIT SQLite memory."""
         db_path = str(self.experiment_dir / "memory.db")
         await initialize_pyrit_async(memory_db_type="SQLite", db_path=db_path)
 
     async def _fetch_seeds(self):
-        """Fetches the attack seeds."""
         seed_cfg = self.cfg.get("seed", {})
         seed_name = seed_cfg.get("name", "adv_bench")
         num_samples = seed_cfg.get("num_samples", 3)
@@ -107,7 +95,6 @@ class DatasetGenerator:
         return seeds, num_samples
 
     def _build_attack(self):
-        """Instantiates the attack class based on config."""
         attack_cfg = self.cfg.get("attack", {})
         attack_name = attack_cfg.get("name")
         
@@ -117,7 +104,6 @@ class DatasetGenerator:
             raise ValueError(f"Unsupported attack name: {attack_name}")
 
     def _create_tasks(self, seeds, num_samples, attack):
-        """Makes the queue of tasks."""
         semaphore = asyncio.Semaphore(self.max_concurrency)
         tasks = []
         counter = 0
@@ -139,7 +125,6 @@ class DatasetGenerator:
         return tasks
 
     def _summarize_results(self, results):
-        """Logs the final statistics of the batch."""
         stats = {"success": 0, "failure": 0, "unknown": 0, "errors": 0}
 
         for res in results:
@@ -168,7 +153,6 @@ class DatasetGenerator:
         logger.info("-" * 40)
 
     def _process_output(self):
-        """Converts memory.db to parquet dataset"""
         memory2parquet(
             memory_db_path=self.experiment_dir / "memory.db", 
             parquet_path=self.experiment_dir / "dataset.parquet"
@@ -176,7 +160,6 @@ class DatasetGenerator:
         logger.info(f"The dataset is dumped as {self.experiment_dir}/dataset.parquet.")
     
     async def run(self):
-        """Main execution flow."""
         await self._initialize_memory()
         seeds, num_samples = await self._fetch_seeds()
         attack = self._build_attack()        
@@ -184,20 +167,20 @@ class DatasetGenerator:
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         self._summarize_results(results)
-        self._process_output()
+        # self._process_output()
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--save_to", type=str, default="./experiments")
-    parser.add_argument("--config_path", type=str, default="./configs/dataset_base.json")
+    parser.add_argument("--config_path", type=str, default="./configs/dataset_base.yaml")
     parser.add_argument("--max_concurrency", type=int, default=1)
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
     config_path = Path(args.config_path)
     with open(config_path, "r") as f:
-        cfg = json.load(f)
-    
+        cfg = yaml.safe_load(f)
+
     timestamp = int(datetime.now().timestamp())
     run_name = f"{config_path.stem}_{timestamp}"
     experiment_dir = Path(args.save_to) / run_name

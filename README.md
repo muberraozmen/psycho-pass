@@ -38,12 +38,11 @@ If you get JSON, the endpoint is up. If you see 404, your Ollama build does not 
 ```bash
 uv venv --python 3.12
 source .venv/bin/activate   
-uv pip install pyrit==0.10.0
-uv pip install tenacity==9.1.2
+uv pip install pyrit==0.11.0
+uv pip install tenacity==9.1.4
 uv pip install torch==2.10.0
 uv pip install scikit-learn==1.8.0
-uv pip install pyarrow==23.0.0 
-uv pip install pandas==3.0.0
+uv pip install seaborn==0.13.2
 ```
 
 ### 3. Environment variables

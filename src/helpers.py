@@ -32,7 +32,6 @@ def describe_db(db_path: str) -> None:
     def _describe_table(conn: sqlite3.Connection, table_name: str) -> None:
         columns = _get_columns(conn, table_name)
         row_count = _get_row_count(conn, table_name)
-
         print(f"\nTable: {table_name}")
         print(f"Rows: {row_count}")
         print("Columns:")
@@ -78,7 +77,12 @@ def view_conversations(db_path: str, n_conversations: int = 10) -> None:
             print("------------------------------------------------")
             print(f"TURN {message.sequence} - ROLE {message.role}")
             print(f"{message.get_values()[0]}")
-            
 
 if __name__ == "__main__":
-    describe_db("./experiments/dataset_feb3_1770230537/memory.db")
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--db_path", type=str, required=True)
+    parser.add_argument("--n_conversations", type=int, default=3)
+    args = parser.parse_args()
+    describe_db(args.db_path)
+    view_conversations(args.db_path, args.n_conversations)

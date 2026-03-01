@@ -13,11 +13,10 @@ from pyrit.score import (
     TrueFalseQuestionPaths
 )
 
+
 __all__ = ["RTA"]
 
-# ------------------------------------------------------------
-# Helper Functions
-# ------------------------------------------------------------
+
 def build_chat_bot(cfg: dict) -> OpenAIChatTarget:    
     if cfg.get("type") == "ollama":
         return OpenAIChatTarget(
@@ -26,7 +25,7 @@ def build_chat_bot(cfg: dict) -> OpenAIChatTarget:
             model_name=cfg.get("model_name"),
             temperature=cfg.get("temperature", 0.5),
         )
-    elif cfg.get("type") == "together":
+    elif cfg.get("type") == "togetherai":
         return OpenAIChatTarget(
             api_key=os.environ["TOGETHER_CHAT_KEY"],
             endpoint=os.environ["TOGETHER_CHAT_ENDPOINT"],
@@ -36,38 +35,36 @@ def build_chat_bot(cfg: dict) -> OpenAIChatTarget:
     else:
         raise ValueError(f"Unsupported type: {cfg.get('type')}")
 
-# ------------------------------------------------------------
-# Base Class
-# ------------------------------------------------------------
+
 class BaseAttack:
     def __init__(self, cfg: dict) -> None:
         self.cfg = cfg
     
     async def run(self, seed: Seed) -> AttackResult:
-        raise NotImplementedError("Subclasses must implement the run method.")
+        raise NotImplementedError()
 
-# ------------------------------------------------------------
-# RTA Class
-# ------------------------------------------------------------
+
 class RTA(BaseAttack):
+    """ Red Teaming Attack (RTA) """
     def __init__(self, cfg: dict) -> None:
         super().__init__(cfg)
 
+        # Configuration
+        self.max_turns = cfg.get("max_turns", 3)
+        
         # Build Chat Bots
         self.adversarial_bot = build_chat_bot(cfg.get("adversarial", {}))
         self.scoring_bot = build_chat_bot(cfg.get("scoring", {}))
         self.objective_bot = build_chat_bot(cfg.get("objective", {}))
 
-        self.max_turns = cfg.get("max_turns", 3)
-
-        # Extract configurationprompts
+        # Prompts
         self.adversarial_prompt = cfg.get("adversarial", {}).get("prompt")
         self.scoring_prompt = cfg.get("scoring", {}).get("prompt")
 
     async def run(self, seed: Seed) -> AttackResult:
         objective = seed.value
 
-        # --- 1. Adversarial Configuration ---
+        # Adversarial Configuration - Attacker
         if self.adversarial_prompt:
             seed_prompt =  self.adversarial_prompt.format(objective=objective)
             adversarial_config = AttackAdversarialConfig(
@@ -75,18 +72,15 @@ class RTA(BaseAttack):
                 seed_prompt=seed_prompt
             )
         else:
-            # Default to PyRIT's built-in prompts
             adversarial_config = AttackAdversarialConfig(
                 target=self.adversarial_bot, 
                 system_prompt_path=RTASystemPromptPaths.TEXT_GENERATION.value
             )
         
-        # --- 2. Scoring Configuration ---
+        # Scoring Configuration - Judge
         if self.scoring_prompt:
-            true_desc = self.scoring_prompt.get("true", "").format(objective=objective)
-            false_desc = self.scoring_prompt.get("false")
-            if false_desc:
-                false_desc = false_desc.format(objective=objective)
+            true_desc = self.scoring_prompt.get("true_description", "").format(objective=objective)
+            false_desc = self.scoring_prompt.get("false_description", "").format(objective=objective)
             scoring_config = AttackScoringConfig(
                 objective_scorer=SelfAskTrueFalseScorer(
                     chat_target=self.scoring_bot,
@@ -97,16 +91,14 @@ class RTA(BaseAttack):
                 )
             )
         else:
-            # Default to PyRIT's built-in prompts
-            # NOTE: in pyrit 0.11.0 a new question path is introduced which is more suitable: TASK_ACHIEVED.value
             scoring_config = AttackScoringConfig(
                 objective_scorer=SelfAskTrueFalseScorer(
                     chat_target=self.scoring_bot,
-                    true_false_question_path=TrueFalseQuestionPaths.QUESTION_ANSWERING.value
+                    true_false_question_path=TrueFalseQuestionPaths.TASK_ACHIEVED.value
                 )
             )
-        
-        # --- 3. Assemble Attack ---
+            
+        # Assemble Attack
         attack = RedTeamingAttack(
             objective_target=self.objective_bot,
             attack_adversarial_config=adversarial_config,
@@ -114,7 +106,7 @@ class RTA(BaseAttack):
             max_turns=self.max_turns
         )
 
-        # --- 4. Execute ---
+        # Execute Attack
         result = await attack.execute_async(
             objective=objective, 
             memory_labels={
