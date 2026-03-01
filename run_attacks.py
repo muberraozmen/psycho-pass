@@ -1,8 +1,13 @@
 import argparse
 import json
 import yaml
-from datetime import datetime
+import logging
 from pathlib import Path
+from datetime import datetime
+
+from typing import Any
+
+from dotenv import load_dotenv
 
 import asyncio
 from tenacity import (
@@ -15,184 +20,166 @@ from tenacity import (
 from pyrit.setup import initialize_pyrit_async
 from pyrit.datasets import SeedDatasetProvider
 from src.attacks import *
-from src.processors import memory2parquet
 
-import logging
-logger = logging.getLogger(__name__)
-logging.getLogger("pyrit").setLevel(logging.ERROR)
-logging.getLogger("httpx").setLevel(logging.ERROR) 
+
+def load_config(config_path: Path) -> dict[str, Any]:
+    """Load YAML config from path."""
+    with open(config_path, "r") as f:
+        return yaml.safe_load(f)
+
+
+def setup_experiment_dir(save_root: Path, config_stem: str) -> Path:
+    """Create timestamped experiment directory under save_root."""
+    timestamp = int(datetime.now().timestamp())
+    run_name = f"{config_stem}_{timestamp}"
+    experiment_dir = save_root / run_name
+    experiment_dir.mkdir(parents=True, exist_ok=True)
+    return experiment_dir
+
+
+def setup_logging(experiment_dir: Path) -> logging.Logger:
+    """Configure root logger with file and console handlers; return script logger."""
+    log_file = experiment_dir / "out.log"
+    level = logging.INFO
+
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+    if root_logger.handlers:
+        root_logger.handlers.clear()
+
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setFormatter(formatter)
+    root_logger.addHandler(file_handler)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+
+    logging.getLogger("pyrit").setLevel(logging.ERROR)
+    logging.getLogger("httpx").setLevel(logging.ERROR)
+
+    return logging.getLogger(__name__)
+
+
+async def initialize_memory(experiment_dir: Path) -> None:
+    """Initialize PyRIT async with SQLite memory in experiment dir."""
+    db_path = experiment_dir / "memory.db"
+    await initialize_pyrit_async(memory_db_type="SQLite", db_path=str(db_path))
+
+
+async def fetch_seeds(seed_cfg: dict[str, Any]) -> tuple[list, int]:
+    """Fetch seed dataset and return (seeds, num_samples)."""
+    seed_name = seed_cfg.get("name", "adv_bench")
+    num_samples = seed_cfg.get("num_samples", 3)
+    seed_dataset = await SeedDatasetProvider.fetch_datasets_async(dataset_names=[seed_name])
+    seeds = seed_dataset[0].seeds
+    return seeds, num_samples
+
+
+def build_attack(attack_cfg: dict[str, Any]):
+    """Build attack instance from config."""
+    attack_type = attack_cfg.get("type")
+    if attack_type == "rta":
+        return RTA(attack_cfg)
+    if attack_type == "crescendo":
+        return Crescendo(attack_cfg)
+    raise ValueError(f"Unsupported attack type: {attack_type}")
 
 
 @retry(
     retry=retry_if_exception_type(Exception),
     wait=wait_random_exponential(multiplier=1, max=60),
-    stop=stop_after_attempt(3)
+    stop=stop_after_attempt(3),
 )
-async def _execute_single_attack(semaphore, attack, seed, idx):
+async def execute_single_attack(
+    semaphore: asyncio.Semaphore,
+    attack,
+    seed,
+    idx: int,
+    logger: logging.Logger,
+):
+    """Run one attack with semaphore; retry on exception."""
     async with semaphore:
-        logger.info(f"Starting attack {idx}...")
+        logger.info("Starting attack %s...", idx)
         start_time = datetime.now()
-        result = await attack.run(seed)        
-        end_time = datetime.now()
-        duration = (end_time - start_time).total_seconds()
-        logger.info(f"Finished attack {idx} in {int(duration)} seconds.")
+        result = await attack.execute(seed)
+        duration = (datetime.now() - start_time).total_seconds()
+        logger.info("Finished attack %s in %d seconds.", idx, int(duration))
         return result
 
 
-class DatasetGenerator:
-    def __init__(self, experiment_dir: Path, cfg: dict, max_concurrency: int = 1, debug: bool = False):
-        self.experiment_dir = experiment_dir
-        self.cfg = cfg
-        self.max_concurrency = max_concurrency
-        self.debug = debug
-        
-        self.experiment_dir.mkdir(parents=True, exist_ok=True)        
-        self._setup_logging()
-        self._dump_config()
-    
-    def _setup_logging(self):
-        log_file = self.experiment_dir / "out.log"
-        
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        
-        root_logger = logging.getLogger()
-        root_logger.setLevel(logging.INFO)
-        
-        if root_logger.handlers:
-            root_logger.handlers = []
-            
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setFormatter(formatter)
-        root_logger.addHandler(file_handler)
-        
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-        root_logger.addHandler(console_handler)
-
-    def _dump_config(self):
-        with open(self.experiment_dir / "config.json", "w") as f:
-            json.dump(self.cfg, f, indent=4)
-
-    async def _initialize_memory(self):
-        db_path = str(self.experiment_dir / "memory.db")
-        await initialize_pyrit_async(memory_db_type="SQLite", db_path=db_path)
-
-    async def _fetch_seeds(self):
-        seed_cfg = self.cfg.get("seed", {})
-        seed_name = seed_cfg.get("name", "adv_bench")
-        num_samples = seed_cfg.get("num_samples", 3)
-
-        seed_dataset = await SeedDatasetProvider.fetch_datasets_async(dataset_names=[seed_name])
-        seeds = seed_dataset[0].seeds
-
-        if self.debug:
-            logger.info("-" * 40)
-            logger.info("DEBUG MODE: Limiting to 3 seeds and 1 sample/seed")
-            logger.info("-" * 40)
-            seeds = seeds[:3]
-            num_samples = 1
-
-        return seeds, num_samples
-
-    def _build_attack(self):
-        attack_cfg = self.cfg.get("attack", {})
-        attack_name = attack_cfg.get("name")
-        
-        if attack_name == "rta":
-            return RTA(attack_cfg) 
-        else:
-            raise ValueError(f"Unsupported attack name: {attack_name}")
-
-    def _create_tasks(self, seeds, num_samples, attack):
-        semaphore = asyncio.Semaphore(self.max_concurrency)
-        tasks = []
-        counter = 0
-
-        logger.info("-" * 40)
-        logger.info(f"BATCH STARTING")
-        logger.info(f"Seed Count: {len(seeds)} | Samples per Seed: {num_samples}")
-        logger.info(f"Max Concurrency: {self.max_concurrency}")
-        logger.info(f"Output: {self.experiment_dir}")
-        logger.info("-" * 40)
-
-        for seed in seeds:
-            for _ in range(num_samples):
-                counter += 1
-                tasks.append(
-                    _execute_single_attack(semaphore, attack, seed, counter)
-                )
-
-        return tasks
-
-    def _summarize_results(self, results):
-        stats = {"success": 0, "failure": 0, "unknown": 0, "errors": 0}
-
-        for res in results:
-            if isinstance(res, Exception):
-                stats["errors"] += 1
-                logger.info(f"Attack failed with error: {res}")
-                continue
-            try:
-                outcome = str(res.outcome.value).lower()
-                if "success" in outcome:
-                    stats["success"] += 1
-                elif "fail" in outcome:
-                    stats["failure"] += 1
-                else:
-                    stats["unknown"] += 1
-            except AttributeError:
-                stats["unknown"] += 1
-
-        logger.info("-" * 40)
-        logger.info(f"BATCH COMPLETE")
-        logger.info(f"Total Attempts: {len(results)}")
-        logger.info(f"  [+] Success (Jailbreaks): {stats['success']}")
-        logger.info(f"  [-] Failed (Refusals):    {stats['failure']}")
-        logger.info(f"  [?] Unknown outcomes:     {stats['unknown']}")
-        logger.info(f"  [!] System Errors:        {stats['errors']}")
-        logger.info("-" * 40)
-
-    def _process_output(self):
-        memory2parquet(
-            memory_db_path=self.experiment_dir / "memory.db", 
-            parquet_path=self.experiment_dir / "dataset.parquet"
+def build_queue(
+    max_concurrency: int,
+    seeds: list,
+    num_samples: int,
+    attack,
+    logger: logging.Logger,
+) -> list:
+    """Build list of coroutines for all (seed, sample) combinations."""
+    semaphore = asyncio.Semaphore(max_concurrency)
+    queue = []
+    counter = 0
+    for seed in seeds:
+        for _ in range(num_samples):
+            counter += 1
+            queue.append(
+                execute_single_attack(semaphore, attack, seed, counter, logger)
             )
-        logger.info(f"The dataset is dumped as {self.experiment_dir}/dataset.parquet.")
-    
-    async def run(self):
-        await self._initialize_memory()
-        seeds, num_samples = await self._fetch_seeds()
-        attack = self._build_attack()        
-        tasks = self._create_tasks(seeds, num_samples, attack)
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        self._summarize_results(results)
-        # self._process_output()
+    return queue
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--save_to", type=str, default="./experiments")
-    parser.add_argument("--config_path", type=str, default="./configs/dataset_base.yaml")
-    parser.add_argument("--max_concurrency", type=int, default=1)
-    parser.add_argument("--debug", action="store_true")
+
+async def run_attacks(
+    experiment_dir: Path,
+    cfg: dict[str, Any],
+    max_concurrency: int,
+    logger: logging.Logger,
+):
+    """Initialize memory, fetch seeds, build attack, run queue, return results."""
+
+    logger.info("Initializing memory...")
+    start_time = datetime.now()
+    await initialize_memory(experiment_dir)
+
+    logger.info("Fetching seeds...")
+    seeds, num_samples = await fetch_seeds(cfg.get("seed", {}))
+
+    attack = build_attack(cfg.get("attack", {}))
+    
+    queue = build_queue(max_concurrency, seeds, num_samples, attack, logger)
+    
+    logger.info("Total number of attacks: %d, starting...", len(queue))
+    results = await asyncio.gather(*queue, return_exceptions=True)
+
+    duration = (datetime.now() - start_time).total_seconds()
+    logger.info("Attacks completed in %d seconds.", int(duration))
+    logger.info("Experiment directory: %s", experiment_dir)
+
+
+
+def main() -> None:
+    project_root = Path(__file__).resolve().parent
+    load_dotenv(project_root / ".env")
+
+    parser = argparse.ArgumentParser(description="Run red-teaming attacks from a YAML config.")
+    parser.add_argument("--experiment_dir", type=str, default="./experiments", help="Root directory for experiment runs")
+    parser.add_argument("--config_path", type=str, default="./configs/dataset_base.yaml", help="Path to YAML config")
+    parser.add_argument("--max_concurrency", type=int, default=1, help="Max concurrent attacks")
     args = parser.parse_args()
 
     config_path = Path(args.config_path)
-    with open(config_path, "r") as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_config(config_path)
+    
+    experiment_dir = setup_experiment_dir(Path(args.experiment_dir), config_path.stem)
 
-    timestamp = int(datetime.now().timestamp())
-    run_name = f"{config_path.stem}_{timestamp}"
-    experiment_dir = Path(args.save_to) / run_name
+    with open(experiment_dir / "config.json", "w") as f:
+        json.dump(cfg, f, indent=4)
 
-    generator = DatasetGenerator(
-        experiment_dir=experiment_dir,
-        cfg=cfg,
-        max_concurrency=args.max_concurrency,
-        debug=args.debug
-    )
+    logger = setup_logging(experiment_dir)
+    
+    asyncio.run(run_attacks(experiment_dir, cfg, args.max_concurrency, logger))
 
-    asyncio.run(generator.run())
 
 if __name__ == "__main__":
     main()
