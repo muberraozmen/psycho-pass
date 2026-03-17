@@ -1,110 +1,62 @@
 import argparse
-import json 
 from datetime import datetime
-from pathlib import Path
 
 from src.encoders import * 
-from src.metrics import evaluate_trajectory, log_comparative_stats
-
-import logging
-logger = logging.getLogger(__name__)
+from src.utils import *
 
 
-class EmbeddingsCalculator:
-    def __init__(self, load_from: Path, experiment_dir: Path, cfg: dict):
-        self.load_from = load_from
-        self.experiment_dir = experiment_dir
-        self.cfg = cfg
+def build_encoder(cfg: dict):
+    """Builds encoder based on config."""
+    encoder_type = cfg.get("type", "tfidf")
+    if encoder_type == "tfidf":
+        return TFIDFEncoder(cfg)
+    elif encoder_type == "transformers":
+        return TransformersEncoder(cfg)
+    elif encoder_type == "together":
+        return TogetherEncoder(cfg)
+    else:
+        raise ValueError(f"Unsupported encoder type: {encoder_type}")
 
-        self.experiment_dir.mkdir(parents=True, exist_ok=True)
-        self._setup_logging()
-        self._dump_config()
-    
-    def _setup_logging(self):
-        """Configures logging to file and console."""
-        log_file = self.experiment_dir / "out.log"
-        
-        # 1. Create your Formatter
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        
-        # 2. Get the Root Logger
-        root_logger = logging.getLogger()
-        root_logger.setLevel(logging.INFO)
-        
-        # 3. Clear existing handlers 
-        if root_logger.handlers:
-            root_logger.handlers = []
-            
-        # 4. Add File Handler
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setFormatter(formatter)
-        root_logger.addHandler(file_handler)
-        
-        # 5. Add Console Handler
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-        root_logger.addHandler(console_handler)
 
-    def _dump_config(self):
-        """Saves the configuration to the experiment directory."""
-        with open(self.experiment_dir / "config.json", "w") as f:
-            json.dump(self.cfg, f, indent=4)
+def run_encoder(
+    cfg,
+    experiment_dir,
+    logger, 
+    data
+):
+    """Runs the encoder on the data and saves the embeddings."""
+    start_time = datetime.now()
 
-    def _make_encoder(self):
-        """Initiates encoder based on config."""
-        encoder_cfg = self.cfg.get("encoder", self.cfg)
-        encoder_name = encoder_cfg.get("name", "tfidf")
-        
-        if encoder_name == "tfidf":
-            return TFIDFEncoder(encoder_cfg)
-        elif encoder_name == "bert":
-            return BertEncoder(encoder_cfg)
-        else:
-            raise ValueError(f"Unsupported encoder name: {encoder_name}")
+    logger.info("Building encoder...")
+    encoder = build_encoder(cfg)
 
-    def _calculate_metrics(self):
-        """Calculates trajectory metrics and logs a summary."""
-        # Calculate metrics
-        evaluate_trajectory(
-            embeddings_path=str(self.experiment_dir) + "/embeddings.parquet", 
-            metrics_path=str(self.experiment_dir) + "/metrics.csv"
-            )
-        logger.info(f"Trajectory metrics saved as {self.experiment_dir}/metrics.csv")
+    logger.info("Running encoder...")
+    data["embeddings"] = encoder.run(data["value"].to_list())
 
-        # Log comparative stats
-        logger.info("Summary")
-        full_report = log_comparative_stats(metrics_csv_path=str(self.experiment_dir) + "/metrics.csv")
-        logger.info(full_report)
+    logger.info("Saving embeddings...")
+    data.to_parquet(experiment_dir / "embeddings.parquet")
 
-    def run(self):
-        """Main execution flow."""
-        encoder = self._make_encoder()
-        logger.info(f"Running encoder...")
-        encoder.run(str(self.load_from), str(self.experiment_dir))
-        logger.info(f"Embeddings are saved as {self.experiment_dir}/embeddings.parquet")
-        self._calculate_metrics()
+    duration = (datetime.now() - start_time).total_seconds()
+    logger.info("Encoding completed in %d seconds.", int(duration))
+    logger.info("Embeddings saved as %s/embeddings.parquet", experiment_dir)
+
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--load_from", type=str, required=True, help="Path to the experiment folder containing dataset.parquet")
-    parser.add_argument("--config_path", type=str, default="./configs/embeddings_base.json")
+    load_env()
+    parser = argparse.ArgumentParser(description="Calculate embeddings from a YAML config.")
+    parser.add_argument("--root_dir", type=str, default="./experiments/datasetV1_1772362234", help="Root directory for dataset to calculate embeddings for")
+    parser.add_argument("--config_path", type=str, default="./configs/embeddingsV3.yaml", help="Path to the YAML config")
+
     args = parser.parse_args()
-
-    config_path = Path(args.config_path)
-    with open(config_path, "r") as f:
-        cfg = json.load(f)
     
-    load_from = Path(args.load_from)
-    timestamp = int(datetime.now().timestamp())
-    run_name = f"{config_path.stem}_{timestamp}"
-    experiment_dir = Path(args.load_from) / run_name
+    cfg, experiment_dir = setup_experiment(args.root_dir, args.config_path)
+    
+    logger = setup_logging(experiment_dir)
+    
+    data = extract_messages(args.root_dir + "/memory.db")
+    
+    run_encoder(cfg, experiment_dir, logger, data)
 
-    calculator = EmbeddingsCalculator(
-        load_from=load_from,
-        experiment_dir=experiment_dir,
-        cfg=cfg
-    )
-    calculator.run()
 
 if __name__ == "__main__":
     main()

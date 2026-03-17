@@ -1,8 +1,0 @@
-{
-    "encoder": {
-        "name": "tfidf",
-            "max_features": 1000,
-            "max_df": 0.95,
-            "stop_words": "english"
-    }
-}

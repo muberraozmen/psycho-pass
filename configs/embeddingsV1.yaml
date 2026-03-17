@@ -1,0 +1,5 @@
+type: tfidf
+stop_words: english
+max_features: 2000
+min_df: 1
+max_df: 0.95

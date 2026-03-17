@@ -1,5 +1,5 @@
 seed:
-  name: adv_bench
+  type: adv_bench
   num_samples: 3
 
 attack:

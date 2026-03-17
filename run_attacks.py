@@ -1,12 +1,6 @@
 import argparse
 import asyncio
-import json
-import yaml
-import logging
-from dotenv import load_dotenv
-from pathlib import Path
 from datetime import datetime
-from typing import Any
 
 from tenacity import (
     retry,
@@ -18,65 +12,25 @@ from tenacity import (
 from pyrit.setup import initialize_pyrit_async
 from pyrit.datasets import SeedDatasetProvider
 from src.attacks import *
+from src.utils import load_env, setup_experiment, setup_logging
 
 
-def load_config(config_path: Path) -> dict[str, Any]:
-    """Load YAML config from path."""
-    with open(config_path, "r") as f:
-        return yaml.safe_load(f)
-
-
-def setup_experiment_dir(save_root: Path, config_stem: str) -> Path:
-    """Create timestamped experiment directory under save_root."""
-    timestamp = int(datetime.now().timestamp())
-    run_name = f"{config_stem}_{timestamp}"
-    experiment_dir = save_root / run_name
-    experiment_dir.mkdir(parents=True, exist_ok=True)
-    return experiment_dir
-
-
-def setup_logging(experiment_dir: Path) -> logging.Logger:
-    """Configure root logger with file and console handlers; return script logger."""
-    log_file = experiment_dir / "out.log"
-    level = logging.INFO
-
-    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-
-    root_logger = logging.getLogger()
-    root_logger.setLevel(level)
-    if root_logger.handlers:
-        root_logger.handlers.clear()
-
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setFormatter(formatter)
-    root_logger.addHandler(file_handler)
-
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    root_logger.addHandler(console_handler)
-
-    logging.getLogger("pyrit").setLevel(logging.ERROR)
-    logging.getLogger("httpx").setLevel(logging.ERROR)
-
-    return logging.getLogger(__name__)
-
-
-async def initialize_memory(experiment_dir: Path) -> None:
+async def initialize_memory(experiment_dir):
     """Initialize PyRIT async with SQLite memory in experiment dir."""
     db_path = experiment_dir / "memory.db"
     await initialize_pyrit_async(memory_db_type="SQLite", db_path=str(db_path))
 
 
-async def fetch_seeds(seed_cfg: dict[str, Any]) -> tuple[list, int]:
+async def fetch_seeds(seed_cfg):
     """Fetch seed dataset and return (seeds, num_samples)."""
-    seed_name = seed_cfg.get("name", "adv_bench")
+    seed_name = seed_cfg.get("type", "adv_bench")
     num_samples = seed_cfg.get("num_samples", 3)
     seed_dataset = await SeedDatasetProvider.fetch_datasets_async(dataset_names=[seed_name])
     seeds = seed_dataset[0].seeds
     return seeds, num_samples
 
 
-def build_attack(attack_cfg: dict[str, Any]):
+def build_attack(attack_cfg):
     """Build attack instance from config."""
     attack_type = attack_cfg.get("type")
     if attack_type == "rta":
@@ -92,11 +46,11 @@ def build_attack(attack_cfg: dict[str, Any]):
     stop=stop_after_attempt(3),
 )
 async def execute_single_attack(
-    semaphore: asyncio.Semaphore,
+    semaphore,
     attack,
     seed,
-    idx: int,
-    logger: logging.Logger,
+    idx,
+    logger,
 ):
     """Run one attack with semaphore; retry on exception."""
     async with semaphore:
@@ -109,12 +63,12 @@ async def execute_single_attack(
 
 
 def build_queue(
-    max_concurrency: int,
-    seeds: list,
-    num_samples: int,
+    max_concurrency,
+    seeds,
+    num_samples,
     attack,
-    logger: logging.Logger,
-) -> list:
+    logger,
+):
     """Build list of coroutines for all (seed, sample) combinations."""
     semaphore = asyncio.Semaphore(max_concurrency)
     queue = []
@@ -129,15 +83,16 @@ def build_queue(
 
 
 async def run_attacks(
-    experiment_dir: Path,
-    cfg: dict[str, Any],
-    max_concurrency: int,
-    logger: logging.Logger,
+    cfg,
+    experiment_dir,
+    logger,
+    max_concurrency
 ):
     """Initialize memory, fetch seeds, build attack, run queue, return results."""
 
-    logger.info("Initializing memory...")
     start_time = datetime.now()
+
+    logger.info("Initializing memory...")
     await initialize_memory(experiment_dir)
 
     logger.info("Fetching seeds...")
@@ -156,28 +111,22 @@ async def run_attacks(
 
 
 
-def main() -> None:
-    project_root = Path(__file__).resolve().parent
-    load_dotenv(project_root / ".env")
+def main():
+
+    load_env()
 
     parser = argparse.ArgumentParser(description="Run red-teaming attacks from a YAML config.")
-    parser.add_argument("--experiment_dir", type=str, default="./experiments", help="Root directory for experiment runs")
-    parser.add_argument("--config_path", type=str, default="./configs/dataset_base.yaml", help="Path to YAML config")
+    parser.add_argument("--root_dir", type=str, default="./experiments", help="Root directory for experiment runs")
+    parser.add_argument("--config_path", type=str, default="./configs/datasetV1.yaml", help="Path to YAML config")
     parser.add_argument("--max_concurrency", type=int, default=1, help="Max concurrent attacks")
-    args = parser.parse_args()
-
-    config_path = Path(args.config_path)
-    cfg = load_config(config_path)
     
-    experiment_dir = setup_experiment_dir(Path(args.experiment_dir), config_path.stem)
-
-    with open(experiment_dir / "config.json", "w") as f:
-        json.dump(cfg, f, indent=4)
+    args = parser.parse_args()
+    
+    cfg, experiment_dir = setup_experiment(args.root_dir, args.config_path)
 
     logger = setup_logging(experiment_dir)
     
-    asyncio.run(run_attacks(experiment_dir, cfg, args.max_concurrency, logger))
-
+    asyncio.run(run_attacks(cfg, experiment_dir, logger, args.max_concurrency))
 
 if __name__ == "__main__":
     main()
