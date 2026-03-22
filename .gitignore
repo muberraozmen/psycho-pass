@@ -4,6 +4,9 @@
 # Python 
 __pycache__/
 .ipynb_checkpoints
+*.egg-info/
+build/
+dist/
 
 # Environments
 .env
@@ -24,4 +27,5 @@ venv/
 local/
 experiments/
 paper/
+reports/
 

@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "psycho-pass"
+version = "0.1.0"
+description = "Red-team LLM attacks with PyRIT, TF-IDF and OpenRouter embeddings, and L2 trajectory metrics."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=1.26",
+    "openrouter>=0.1.0",
+    "pandas>=2.0",
+    "pyarrow>=14.0",
+    "pyrit>=0.11.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0",
+    "scikit-learn>=1.4",
+    "tenacity>=8.0",
+]
+
+[project.scripts]
+psycho-pass = "run:main"
+
+[tool.setuptools]
+packages = ["src"]
+py-modules = ["run"]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.2.0",
+]

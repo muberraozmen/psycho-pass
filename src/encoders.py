@@ -1,70 +1,74 @@
+from __future__ import annotations
+
 import os
-from typing import Any
+
 import numpy as np
-
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sentence_transformers import SentenceTransformer
-from together import Together
+from openrouter import OpenRouter
 
 
-__all__ = ["TFIDFEncoder", "TransformersEncoder", "TogetherEncoder"]
+__all__ = [
+    "LexicalEncoder",
+    "SemanticEncoder",
+]
 
 
-class BaseEncoder:
-    def __init__(self, cfg: dict[str, Any]):
+DEFAULT_LEXICAL_MAX_FEATURES = 4096
+DEFAULT_LEXICAL_STOP_WORDS = "english"
+DEFAULT_LEXICAL_MIN_DF = 1
+DEFAULT_LEXICAL_MAX_DF = 0.95
+
+DEFAULT_SEMANTIC_MODEL_NAME = "qwen/qwen3-embedding-8b"
+DEFAULT_SEMANTIC_MAX_CONTEXT_TOKENS = 32000
+
+API_KEY = os.environ["OPENROUTER_API_KEY"]
+
+
+class LexicalEncoder():
+    def __init__(self, cfg: dict):
+        super().__init__()
         self.cfg = cfg
-    
-    def run(self, text: list[str]) -> list[list[float]]:
-        raise NotImplementedError("Subclasses must implement the run method.")
-
-
-class TFIDFEncoder(BaseEncoder):
-    def __init__(self, cfg):
-        super().__init__(cfg)
-
         self.vectorizer = TfidfVectorizer(
-            max_features=cfg.get("max_features", 2000), 
-            stop_words=cfg.get("stop_words", 'english'),
-            min_df=cfg.get("min_df", 1),
-            max_df=cfg.get("max_df", 0.95)
+            max_features=cfg.get("max_features", DEFAULT_LEXICAL_MAX_FEATURES),
+            stop_words=cfg.get("stop_words", DEFAULT_LEXICAL_STOP_WORDS),
+            min_df=cfg.get("min_df", DEFAULT_LEXICAL_MIN_DF),
+            max_df=cfg.get("max_df", DEFAULT_LEXICAL_MAX_DF),
         )
 
-    def run(self, text: list[str]) -> list[list[float]]:
-        embeddings = np.array(self.vectorizer.fit_transform(text).toarray(), dtype=np.float32)
-        return embeddings.tolist()
+    def execute(self, text: list[str]) -> list[list[float]]:
+        embeddings = np.array(
+            self.vectorizer.fit_transform(text).toarray(), dtype=np.float32
+        ).tolist()
+        return embeddings
 
 
-class TransformersEncoder(BaseEncoder):
-    def __init__(self, cfg):
-        super().__init__(cfg)
-        self.model = SentenceTransformer(cfg.get("model_name", "sentence-transformers/all-MiniLM-L6-v2"))
-        self.model.eval()
+class SemanticEncoder():
+    def __init__(self, cfg: dict):
+        super().__init__()
+        self.cfg = cfg
+        self.model_name = cfg.get("model_name", DEFAULT_SEMANTIC_MODEL_NAME)
+        self.max_context_tokens = cfg.get("max_context_tokens", DEFAULT_SEMANTIC_MAX_CONTEXT_TOKENS)
+        self.client = OpenRouter(api_key=API_KEY)
 
-    def run(self, text: list[str]) -> list[list[float]]:
-        embeddings = self.model.encode(text)
-        return embeddings.tolist()
-
-
-class TogetherEncoder(BaseEncoder):
-    def __init__(self, cfg):
-        super().__init__(cfg)
-        self.model_name = cfg.get("model_name", "intfloat/multilingual-e5-large-instruct")
-        self.client = Together(api_key=os.environ["TOGETHER_API_KEY"])
-
-    def run(self, text: list[str]) -> list[list[float]]:
+    def execute(self, text: list[str]) -> list[list[float]]:
         try:
-            input = [t[:512] if len(t) > 512 else t for t in text]
-            response = self.client.embeddings.create(
+            # truncate text if max_context_tokens is set
+            if self.max_context_tokens is not None:
+                n = self.max_context_tokens
+                inputs = [t[:n] if len(t) > n else t for t in text]
+            else:
+                inputs = text
+            
+            response = self.client.embeddings.generate(
                 model=self.model_name,
-                input=input
-                )
-            embeddings = [x.embedding for x in response.data]
+                input=inputs,
+            )
+            
+            response_data = sorted(response.data, key=lambda r: int(r.index))
+            embeddings = [r.embedding for r in response_data]
+            
             return embeddings
 
         except Exception as e:
             print(f"An error occurred: {e}")
             return []
-
-
-
-    

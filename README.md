@@ -1,153 +1,113 @@
 # Psycho-Pass
 
-Red-teaming pipeline: generate multi-turn jailbreak attacks, export conversations to Parquet, compute text embeddings, and evaluate trajectory metrics (velocity, directness, displacement) to compare successful vs failed attacks.
+End-to-end red-teaming pipeline: run **PyRIT** attacks (RTA or Crescendo) against a chat API, persist results in SQLite, build **lexical** (TF-IDF) and **semantic** (OpenRouter embeddings) trajectories per conversation, then compute **L2 geometry metrics** (path length, displacement, directness, speed statistics, circularity) for each trajectory—split by lexical vs semantic encoders.
+
+A single entrypoint orchestrates all stages: attacks → embeddings → metrics.
 
 ---
 
-## Structure
+## Repository layout
 
-| Module | Script | Input | Output |
-|--------|--------|--------|--------|
-| **Attack generation** | `run_attacks.py` | JSON config (e.g. `configs/dataset_base.json`) | Timestamped dir under `--save_to`: `memory.db`, `config.json`, `out.log`, `dataset.parquet` |
-| **Dataset processing** | (built into `run_attacks.py`) | `memory.db` (PyRIT SQLite) | `dataset.parquet` (conversations + outcomes) |
-| **Embeddings** | `run_encoders.py` | Experiment dir containing `dataset.parquet` + encoder config | `embeddings.parquet` (TF-IDF or other encoder) |
-| **Trajectory evaluation** | (built into `run_encoders.py`) | `embeddings.parquet` | `metrics.csv` + comparative report (success vs failure) |
+| Area | Role |
+|------|------|
+| `run.py` | CLI: loads YAML config, creates an experiment directory, runs attack → encoder → metrics pipeline |
+| `src/attacks.py` | `RTA` and `Crescendo` attacks; OpenAI-compatible chat via PyRIT `OpenAIChatTarget` |
+| `src/factory.py` | `AttackFactory` (async attacks, PyRIT memory), `EncoderFactory` (Parquet embeddings), `MetricsFactory` (CSV metrics) |
+| `src/encoders.py` | `LexicalEncoder` (scikit-learn TF-IDF), `SemanticEncoder` (OpenRouter embeddings API) |
+| `src/metrics.py` | `l2_norm_metrics`: trajectory statistics in embedding space |
+| `src/utils.py` | `make_experiment`: merge CLI args into config, create `experiments/…` dir, logging |
+| `configs/` | YAML experiment configs (e.g. `base.yaml`, model-specific variants under `model_iterations/`) |
+
+---
+
+## Requirements
+
+- **Python 3.12+**
+- **[uv](https://docs.astral.sh/uv/)** (recommended) or another PEP 517 installer
 
 ---
 
 ## Setup
 
-### 1. Ollama (optional, for local runs)
-
-```bash
-brew install ollama
-ollama serve
-ollama pull llama3.1
-```
-
-Check the OpenAI-compatible API:
-
-```bash
-curl -s http://localhost:11434/v1/models | head
-```
-
-If you get JSON, the endpoint is up. If you see 404, your Ollama build does not expose the OpenAI-compatible API.
-
-### 2. Python environment (uv)
-
 ```bash
 uv venv --python 3.12
-source .venv/bin/activate   
-uv pip install pyrit==0.11.0
-uv pip install tenacity==9.1.4
-uv pip install torch==2.10.0
-uv pip install scikit-learn==1.8.0
-uv pip install seaborn==0.13.2
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+uv sync
 ```
 
-### 3. Environment variables
-
-For **tests** (OpenAI-compatible endpoint, e.g. Ollama):
-
-```bash
-export OPENAI_CHAT_KEY="ollama"
-export OPENAI_CHAT_ENDPOINT="http://localhost:11434/v1"
-export OPENAI_CHAT_MODEL="llama3.1"
-```
-
-For **attack runs**, set the vars that match your config’s `type`:
-
-- **Ollama** (e.g. `configs/dataset_base.json`):
-  - `OLLAMA_CHAT_KEY`, `OLLAMA_CHAT_ENDPOINT`
-- **Together** (e.g. `configs/dataset_feb3.json`):
-  - `TOGETHER_CHAT_KEY`, `TOGETHER_CHAT_ENDPOINT`
-
-Example `.env`:
-
-```bash
-OLLAMA_CHAT_KEY="ollama"
-OLLAMA_CHAT_ENDPOINT="http://localhost:11434/v1"
-
-TOGETHER_CHAT_KEY=<YOUR_API_KEY>
-TOGETHER_CHAT_ENDPOINT="https://api.together.xyz/v1"
-```
-
-### 4. Sanity check
-
-```bash
-python run_tests.py
-```
-
-This creates `./experiments/tests/memory.db` and prints the latest test conversation.
-
-**Common issues**
-
-- “Model 'llama3' not found”: set `OPENAI_CHAT_MODEL` to the exact name from `ollama list` (e.g. `llama3.1:latest`).
-- `/v1/*` returns 404: Ollama is not exposing the OpenAI-compatible API.
+This installs dependencies from `pyproject.toml` and locks versions via `uv.lock`.
 
 ---
 
-## Run attack generation
+## Environment variables
 
-Generates multi-turn attacks (RTA), writes PyRIT SQLite + logs, then converts the DB to `dataset.parquet` in the same run.
+Create a `.env` file in the project root (`run.py` loads it with `python-dotenv`).
 
-```bash
-python run_attacks.py --save_to ./experiments --config_path ./configs/dataset_base.json --max_concurrency 1
-```
+**Chat completions (attacks)** — used by `src/attacks.py` for adversarial, scoring, and objective models:
 
-- `--save_to`: root directory for results (a timestamped folder is created).
-- `--config_path`: dataset/attack JSON config.
-- `--max_concurrency`: max concurrent attacks.
-- `--debug`: limit to 3 seeds and 1 sample per seed.
+| Variable | Purpose |
+|----------|---------|
+| `OPENROUTER_API_KEY` | API key for OpenRouter |
+| `OPENROUTER_CHAT_ENDPOINT` | OpenAI-compatible base URL (typically `https://openrouter.ai/api/v1` for chat completions) |
 
-**Output** (e.g. `./experiments/dataset_base_<timestamp>/`):
+**Embeddings** — used by `SemanticEncoder` in `src/encoders.py`:
 
-- `memory.db` — PyRIT SQLite
-- `config.json` — copied config
-- `out.log` — run log
-- `dataset.parquet` — standardized conversations + outcomes
+| Variable | Purpose |
+|----------|---------|
+| `OPENROUTER_API_KEY` | Same key; required for semantic embedding requests |
 
-**Config (dataset)**  
-Example: `configs/dataset_base.json`
-
-- `seed`: e.g. `{"name": "adv_bench", "num_samples": 3}`.
-- `attack`: `name` (e.g. `"rta"`), `max_turns`, and for RTA: `adversarial`, `scoring`, `objective` (each with `type`, `model_name`, `temperature`; optional `prompt` for adversarial/scoring).
-
-Ensure the env vars for the `type` you use (ollama/together) are set or in `.env`.
+Ensure your OpenRouter account and models match the `model_name` fields in your YAML (e.g. `meta-llama/llama-3.1-8b-instruct` for chat, `qwen/qwen3-embedding-8b` for embeddings).
 
 ---
 
-## Run embeddings and trajectory evaluation
+## Configuration
 
-Reads an experiment folder that already contains `dataset.parquet`, runs the configured encoder (e.g. TF-IDF), writes embeddings, then computes trajectory metrics and a success-vs-failure comparison.
+Configs are YAML files under `configs/`. The CLI flag `--base_config` is resolved relative to `configs/` (default: `base.yaml`).
 
-```bash
-python run_encoders.py --load_from ./experiments/dataset_base_<timestamp> --config_path ./configs/embeddings_base.json
-```
+Typical sections:
 
-- `--load_from`: path to the experiment directory that contains `dataset.parquet`.
-- `--config_path`: encoder config (e.g. `configs/embeddings_base.json`).
+- **`seeds`**: `dataset_name` (PyRIT `SeedDatasetProvider`, e.g. `adv_bench`), `num_samples` (replication factor for seeds)
+- **`attack`**: `type` (`rta` or `crescendo`), `max_turns`, `scoring_threshold`, optional `max_backtracks` (Crescendo), and nested `adversarial` / `scoring` / `objective` blocks (`model_name`, `temperature`, `top_p`, `max_completion_tokens`, …)
+- **`encoders`**: `lexical` (TF-IDF: `max_features`, `stop_words`, `min_df`, `max_df`) and `semantic` (`model_name`, `max_context_tokens` for truncation)
+- **`metrics`**: reserved for future toggles; L2 metrics are always computed for both encoder outputs when present
 
-**Output** (inside `--load_from`, in a new timestamped subfolder):
-
-- `embeddings.parquet` — one embedding sequence per conversation.
-- `metrics.csv` — per-conversation trajectory metrics (velocity, path length, displacement, directness).
-- `out.log`, `config.json` — run log and config copy.
-
-**Config (embeddings)**  
-Example: `configs/embeddings_base.json`
-
-- `encoder`: e.g. `{"name": "tfidf", "max_features": 1000, "max_df": 0.95, "stop_words": "english"}`.
+See `configs/base.yaml` and `configs/model_iterations/` for examples.
 
 ---
 
-## Inspecting a run
+## Run
 
-```python
-from src.helpers import describe_db, view_conversations
-
-describe_db("./experiments/dataset_base_<timestamp>/memory.db")
-view_conversations("./experiments/dataset_base_<timestamp>/memory.db", n_conversations=5)
+```bash
+python run.py --base_config base.yaml --max_concurrency 3
 ```
 
+Optional:
 
+- `--run_name my_run` — results go under `experiments/my_run/<timestamp>/`
+- Without `--run_name` — `experiments/<timestamp>/`
+
+After `uv sync`, you can also use the installed console script:
+
+```bash
+psycho-pass --base_config base.yaml --max_concurrency 3
+```
+
+---
+
+## Outputs (per experiment directory)
+
+| File | Contents |
+|------|----------|
+| `config.json` | Resolved configuration (CLI merged into YAML) |
+| `out.log` | Run log |
+| `memory.db` | PyRIT SQLite memory (`AttackFactory`) |
+| `embeddings.parquet` | Merged prompt/attack rows with `embeddings_lexical` and `embeddings_semantic` columns |
+| `metrics.csv` | One row per `conversation_id`: outcomes, roles, sequences, and `lexical_*` / `semantic_*` metric columns from `l2_norm_metrics` |
+
+The `experiments/` directory is ignored by git (see `.gitignore`).
+
+---
+
+## Metrics (embedding trajectories)
+
+For each conversation, message-level embeddings are ordered by `sequence`. `l2_norm_metrics` reports quantities such as total path length, displacement (start→end distance), directness (displacement / path length), per-step speed stats, a velocity term (displacement divided by number of steps), and circularity for trajectories with at least three points. Short conversations (fewer than two points) yield `nan` for most fields.
