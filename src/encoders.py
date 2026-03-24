@@ -48,9 +48,11 @@ class SemanticEncoder():
         self.cfg = cfg
         self.model_name = cfg.get("model_name", DEFAULT_SEMANTIC_MODEL_NAME)
         self.max_context_tokens = cfg.get("max_context_tokens", DEFAULT_SEMANTIC_MAX_CONTEXT_TOKENS)
+        self.batch_size = cfg.get("batch_size", 32)
         self.client = OpenRouter(api_key=API_KEY)
 
     def execute(self, text: list[str]) -> list[list[float]]:
+        # import pdb; pdb.set_trace()
         try:
             # truncate text if max_context_tokens is set
             if self.max_context_tokens is not None:
@@ -63,12 +65,51 @@ class SemanticEncoder():
                 model=self.model_name,
                 input=inputs,
             )
-            
-            response_data = sorted(response.data, key=lambda r: int(r.index))
-            embeddings = [r.embedding for r in response_data]
-            
+            embeddings = [[] for _ in range(len(text))]
+            for r in response.data:
+                idx = int(r.index)
+                embeddings[idx] = r.embedding
             return embeddings
 
         except Exception as e:
             print(f"An error occurred: {e}")
             return []
+
+
+class SemanticEncoder:
+    def __init__(self, cfg: dict):
+        # super().__init__() is only needed if inheriting from a base class
+        self.cfg = cfg
+        self.model_name = cfg.get("model_name", DEFAULT_SEMANTIC_MODEL_NAME)
+        self.max_context_tokens = cfg.get("max_context_tokens", DEFAULT_SEMANTIC_MAX_CONTEXT_TOKENS)
+        self.batch_size = cfg.get("batch_size", 32)
+        self.client = OpenRouter(api_key=API_KEY)
+
+    def execute(self, text: list[str]) -> list[list[float]]:
+        if self.max_context_tokens is not None:
+            n = self.max_context_tokens
+            char_limit = n * 4  # rough heuristic (1 token ≈ 4 characters) 
+            inputs = [t[:char_limit] if len(t) > char_limit else t for t in text]
+        else:
+            inputs = text
+        
+        all_embeddings = []
+
+        for i in range(0, len(inputs), self.batch_size):
+            batch = inputs[i:i + self.batch_size]
+            
+            response = self.client.embeddings.generate(
+                model=self.model_name,
+                input=batch,
+            )
+            
+            batch_embeddings = [[] for _ in range(len(batch))]
+            for r in response.data:
+                idx = int(r.index)
+                batch_embeddings[idx] = r.embedding
+            
+            all_embeddings.extend(batch_embeddings)
+
+        return all_embeddings
+
+
