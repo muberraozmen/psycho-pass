@@ -9,12 +9,17 @@ import json
 
 
 def make_experiment(args: argparse.Namespace):
+
     project_root = Path(__file__).resolve().parent.parent
 
     # Parse args into config
     with open(project_root / "configs" / args.config_file, "r") as f:
             cfg = yaml.safe_load(f)
-    
+
+    for k, v in args.__dict__.items():
+        if v is not None:
+            cfg[k] = v
+
     timestamp = datetime.now().strftime("%m-%d %H:%M:%S")
     if args.run_name is not None:
         experiment_dir = project_root / "experiments" / args.run_name / timestamp
@@ -23,9 +28,6 @@ def make_experiment(args: argparse.Namespace):
 
     cfg["experiment_dir"] = str(experiment_dir)
     
-    cfg["max_concurrency"] = int(args.max_concurrency)
-    
-
     experiment_dir.mkdir(parents=True, exist_ok=True)
 
     with open(experiment_dir / "config.json", "w") as f:

@@ -1,23 +1,21 @@
 from __future__ import annotations
-import asyncio
 import json
 from datetime import datetime
-
+from re import S
 import numpy as np
-from pyrit.setup import initialize_pyrit_async
-from pyrit.datasets import SeedDatasetProvider
+import pandas as pd
+import asyncio
+import sqlite3
 from tenacity import (
     retry,
     stop_after_attempt,
     wait_random_exponential,
     retry_if_exception_type,
 )
+from pyrit.setup import initialize_pyrit_async
+from pyrit.datasets import SeedDatasetProvider
 from src.attacks import *
-
-import sqlite3
-import pandas as pd
 from src.encoders import * 
-
 from src.metrics import l2_norm_metrics
 
 
@@ -25,60 +23,51 @@ MEMORY_FILENAME = "memory.db"
 EMBEDDINGS_FILENAME = "embeddings.parquet"
 METRICS_FILENAME = "metrics.csv"
 
+
 class AttackFactory:
     def __init__(self, cfg, experiment_dir, logger):
         self.cfg = cfg
         self.experiment_dir = experiment_dir
         self.logger = logger
-        self.memory_path = self.experiment_dir / MEMORY_FILENAME
 
-        self.seeds = None
-        self.attack = None
-        self.semaphore = None
-        self.tasks = []
+        self.memory_path = self.experiment_dir / MEMORY_FILENAME
+        self.attack_type = cfg.get("attack", {}).get("type")
+        self.dataset_name = cfg.get("seeds", {}).get("dataset_name")
+        self.num_samples = cfg.get("seeds", {}).get("num_samples", 1)
+        self.max_concurrency = cfg.get("max_concurrency", 3)
 
     async def initialize_memory(self):
         await initialize_pyrit_async(memory_db_type="SQLite", db_path=str(self.memory_path))
 
-    async def fetch_seeds(self):
-        seeds_cfg = self.cfg.get("seeds", {})
-        dataset_name = seeds_cfg.get("dataset_name", "adv_bench")
-        num_samples = seeds_cfg.get("num_samples", 1)
-        datasets = await SeedDatasetProvider.fetch_datasets_async(dataset_names=[dataset_name])
-        seeds = datasets[0].seeds * num_samples
-        return seeds
-
     def build_attack(self):
         attack_cfg = self.cfg.get("attack", {})
-        attack_type = attack_cfg.get("type")
-        if attack_type == "rta":
+        if self.attack_type == "rta":
             return RTA(attack_cfg)
-        if attack_type == "crescendo":
+        if self.attack_type == "crescendo":
             return Crescendo(attack_cfg)
-        raise ValueError(f"Unsupported attack type: {attack_type}")
+        raise ValueError(f"Unsupported attack type: {self.attack_type}")
+
+    async def fetch_seeds(self):
+        datasets = await SeedDatasetProvider.fetch_datasets_async(dataset_names=[self.dataset_name])
+        seeds = datasets[0].seeds * self.num_samples
+        return seeds
 
     @retry(
         retry=retry_if_exception_type(Exception),
         wait=wait_random_exponential(multiplier=1, max=60),
         stop=stop_after_attempt(3),
     )
-    async def _attack_task(self, seed, idx):
-        async with self.semaphore:
+    async def _attack_task(self, attack, seed, semaphore, idx):
+        async with semaphore:
             self.logger.info("Starting attack %s (slot acquired)...", idx)
             start_time = datetime.now()
-            result = await self.attack.execute(seed)
+            result = await attack.execute(seed)
             duration = (datetime.now() - start_time).total_seconds()
             self.logger.info("Finished attack %s in %d seconds.", idx, int(duration))
             return result
 
-    def queue_tasks(self) -> None:
-        self.tasks = []
-        for idx, seed in enumerate(self.seeds):
-            self.tasks.append(self._attack_task(seed, idx))
-
     def summarize_results(self, results):
-        self.logger.info("Attack Results Summary:")
-        num_samples = len(results)
+        num_attacks = len(results)
         success_count = failure_count = 0
         for result in results:
             try:
@@ -88,31 +77,28 @@ class AttackFactory:
                     failure_count += 1
             except Exception as e:
                 continue
-        self.logger.info(f"Number of samples: {num_samples}")
+        self.logger.info(f"Number of attacks: {num_attacks}")
         self.logger.info(f"Success count: {success_count}")
         self.logger.info(f"Failure count: {failure_count}")
 
     async def execute(self):
         await self.initialize_memory()
-        self.attack = self.build_attack()
-        self.seeds = await self.fetch_seeds()
-        max_conc = int(self.cfg.get("max_concurrency", 3))
-        self.semaphore = asyncio.Semaphore(max_conc)
-        self.queue_tasks()
+        attack = self.build_attack()
+        seeds = await self.fetch_seeds()
+        semaphore = asyncio.Semaphore(self.max_concurrency)
 
-        self.logger.info(
-            "Total attack jobs: %d; at most %d run execute() concurrently (each job may take many API turns).",
-            len(self.tasks),
-            max_conc,
-        )
+        tasks = []
+        for idx, seed in enumerate(seeds):
+            tasks.append(self._attack_task(attack, seed, semaphore, idx))
+        self.logger.info("Total attack jobs: %d; max concurrency: %d.",len(tasks), self.max_concurrency)
+
         start_time = datetime.now()
-        results = await asyncio.gather(*self.tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
         duration = (datetime.now() - start_time).total_seconds()
         self.logger.info("Attacks completed in %d seconds.", int(duration))
-        
         self.logger.info("Memory is saved as: %s", self.memory_path)
-        start_time = datetime.now()
 
+        self.logger.info("Attack Results Summary:")
         self.summarize_results(results)
 
 
@@ -121,8 +107,10 @@ class EncoderFactory:
         self.cfg = cfg
         self.experiment_dir = experiment_dir
         self.logger = logger
+
         self.memory_path = self.experiment_dir / MEMORY_FILENAME
         self.embeddings_path = self.experiment_dir / EMBEDDINGS_FILENAME
+
 
     def build_encoders(self):
         encoder_cfg = self.cfg.get("encoders", {})
@@ -164,12 +152,16 @@ class EncoderFactory:
 
     def execute(self):
         encoders = self.build_encoders()
-        df = self.load_memory()
+        dataset = self.load_memory()
 
         for name, encoder in encoders.items():
-            embeddings = encoder.execute(df["value"].to_list())
-            df[f"embeddings_{name}"] = embeddings
-        df.to_parquet(self.embeddings_path)
+            try:
+                embeddings = encoder.execute(dataset["value"].to_list())
+                dataset[f"embeddings_{name}"] = embeddings
+            except Exception as e:
+                self.logger.error(f"Error encoding {name} embeddings: {e}")
+                continue
+        dataset.to_parquet(self.embeddings_path)
 
         self.logger.info("Embeddings are saved as: %s", self.embeddings_path)
 

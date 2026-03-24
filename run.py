@@ -8,8 +8,6 @@ from src.utils import make_experiment
 from src.factory import AttackFactory, EncoderFactory, MetricsFactory
 
 
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name", type=str, help="Name of the experiment run")
