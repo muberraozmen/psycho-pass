@@ -50,7 +50,7 @@ class AttackFactory:
     async def fetch_seeds(self):
         datasets = await SeedDatasetProvider.fetch_datasets_async(dataset_names=[self.dataset_name])
         seeds = datasets[0].seeds * self.num_samples
-        return seeds
+        return seeds[:10]
 
     @retry(
         retry=retry_if_exception_type(Exception),
@@ -174,55 +174,57 @@ class MetricsFactory:
         self.embeddings_path = self.experiment_dir / EMBEDDINGS_FILENAME
         self.metrics_path = self.experiment_dir / METRICS_FILENAME
 
-    def load_embeddings(self):
-        return pd.read_parquet(self.embeddings_path)
-
-    @staticmethod
-    def _trajectory_array(df: pd.DataFrame, row_indices: list, embedding_col: str) -> np.ndarray:
-        if not row_indices:
-            return np.zeros((0, 0), dtype=np.float64)
-        sub = df[df["index"].isin(row_indices)].sort_values("sequence")
-        vectors = sub[embedding_col].tolist()
-        return np.asarray(vectors, dtype=np.float64)
-
-    def get_conversation_table(self, df: pd.DataFrame | None = None) -> pd.DataFrame:
-        if df is None:
-            df = self.load_embeddings()
-        df = df.sort_values(by=["conversation_id", "sequence"])
-        return df.groupby(["conversation_id"], as_index=False).agg(
-            {
-                "index": list,
-                "objective": "first",
-                "executed_turns": "max",
-                "outcome": "last",
-                "role": list,
-                "sequence": list,
-            },
-        )
-
     def execute(self) -> None:
-        df = self.load_embeddings()
-        conversations = self.get_conversation_table(df)
+        data = pd.read_parquet(self.embeddings_path)
 
         rows: list[dict] = []
-        for _, row in conversations.iterrows():
-            idx_list = row["index"]
-            base_m = {
-                "conversation_id": row["conversation_id"],
-                "objective": row["objective"],
-                "executed_turns": row["executed_turns"],
-                "outcome": row["outcome"],
-                "sequence": json.dumps(row["sequence"]),
-                "role": json.dumps(row["role"]),
-            }
-            lex_traj = self._trajectory_array(df, idx_list, "embeddings_lexical")
-            sem_traj = self._trajectory_array(df, idx_list, "embeddings_semantic")
-            lex_m = l2_norm_metrics(lex_traj)
-            sem_m = l2_norm_metrics(sem_traj)
-            for name, metrics in [("lexical", lex_m), ("semantic", sem_m)]:
-                base_m.update({f"{name}_{k}": metrics[k] for k in metrics.keys()})
-            rows.append(base_m)
 
-        out_df = pd.DataFrame(rows)
-        out_df.to_csv(self.metrics_path, index=False)
+        for conversation_id in data["conversation_id"].unique():
+            conversation = data[data["conversation_id"] == conversation_id]
+            conversation = conversation.sort_values("sequence")
+
+            metrics = {
+                "conversation_id": conversation_id,
+                "outcome": conversation["outcome"].iloc[-1]
+            }
+
+            executed_turns = conversation["executed_turns"].iloc[-1]
+            for name, embeddings in [("lexical", "embeddings_lexical"), ("semantic", "embeddings_semantic")]:
+                embeddings = np.asarray(conversation[embeddings].tolist(), dtype=np.float64)
+                metrics.update(l2_norm_metrics(embeddings, prefix=name))
+
+                user_embeddings = embeddings[0::2, :]
+                metrics.update(l2_norm_metrics(user_embeddings, prefix=f"{name}_user"))
+
+                assistant_embeddings = embeddings[1::2, :]
+                metrics.update(l2_norm_metrics(assistant_embeddings, prefix=f"{name}_assistant"))
+
+                if executed_turns >= 2:
+                    early_embeddings = embeddings[:-2]
+                    metrics.update(l2_norm_metrics(early_embeddings, prefix=f"{name}_early"))
+
+                    user_early_embeddings = early_embeddings[0::2, :]
+                    metrics.update(l2_norm_metrics(user_early_embeddings, prefix=f"{name}_user_early"))
+
+                    assistant_early_embeddings = early_embeddings[1::2, :]
+                    metrics.update(l2_norm_metrics(assistant_early_embeddings, prefix=f"{name}_assistant_early"))
+
+                if executed_turns >= 3:
+                    very_early_embeddings = embeddings[:-4]
+                    metrics.update(l2_norm_metrics(very_early_embeddings, prefix=f"{name}_very_early"))
+
+                    user_very_early_embeddings = very_early_embeddings[0::2, :]
+                    metrics.update(l2_norm_metrics(user_very_early_embeddings, prefix=f"{name}_user_very_early"))
+
+                    assistant_very_early_embeddings = very_early_embeddings[1::2, :]
+                    metrics.update(l2_norm_metrics(assistant_very_early_embeddings, prefix=f"{name}_assistant_very_early"))
+
+
+            rows.append(metrics)
+
+        pd.DataFrame(rows).to_csv(self.metrics_path, index=False)
         self.logger.info("Metrics are saved as: %s", self.metrics_path)
+
+
+# TODO: make dataclass for saving embeddings and calculating metrics
+# TODO: make early metrics calculation iterative 

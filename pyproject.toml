@@ -5,7 +5,6 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "psycho-pass"
 version = "0.1.0"
-description = "Red-team LLM attacks with PyRIT, TF-IDF and OpenRouter embeddings, and L2 trajectory metrics."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -17,6 +16,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0",
     "scikit-learn>=1.4",
+    "seaborn>=0.13.2",
     "tenacity>=8.0",
 ]
 
