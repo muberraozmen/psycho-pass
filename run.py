@@ -12,11 +12,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name", type=str, help="Name of the experiment run")
     parser.add_argument("--config_file", type=str, default="base.yaml", help="Base config file")
-    parser.add_argument("--max_concurrency", type=int, default=3, help="Max concurrent attacks")
+    parser.add_argument("--max_concurrency", type=int, default=10, help="Max concurrent attacks")
     parser.add_argument("--seeds.dataset_name", type=str, help="Dataset name")
     parser.add_argument("--attack.type", type=str, help="Attack type")
     parser.add_argument("--attack.max_turns", type=int, help="Max turns")
-    parser.add_argument("--objective.model_name", type=str, help="Objective model name")
+    parser.add_argument("--attack.objective.model_name", type=str, help="Objective model name")
 
     args = parser.parse_args()
     

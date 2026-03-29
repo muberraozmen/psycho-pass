@@ -50,7 +50,7 @@ class AttackFactory:
     async def fetch_seeds(self):
         datasets = await SeedDatasetProvider.fetch_datasets_async(dataset_names=[self.dataset_name])
         seeds = datasets[0].seeds * self.num_samples
-        return seeds[:10]
+        return seeds
 
     @retry(
         retry=retry_if_exception_type(Exception),
