@@ -1,5 +1,4 @@
 from __future__ import annotations
-import json
 from datetime import datetime
 from re import S
 import numpy as np
@@ -20,9 +19,30 @@ from src.metrics import l2_norm_metrics
 
 
 MEMORY_FILENAME = "memory.db"
-EMBEDDINGS_FILENAME = "embeddings.parquet"
-METRICS_FILENAME = "metrics.csv"
-
+EMBEDDINGS_FILENAMES = {
+    "lexical": "embeddings_lexical.parquet",
+    "semantic": "embeddings_semantic.parquet",
+}
+METRICS_CONFIGS = [
+    {"filename": "metrics_lexical.csv", "embeddings": "lexical", "role": None, "trim": None},
+    {"filename": "metrics_semantic.csv", "embeddings": "semantic", "role": None, "trim": None},
+    {"filename": "metrics_lexical_user.csv", "embeddings": "lexical", "role": "user", "trim": None},
+    {"filename": "metrics_semantic_user.csv", "embeddings": "semantic", "role": "user", "trim": None},
+    {"filename": "metrics_lexical_assistant.csv", "embeddings": "lexical", "role": "assistant", "trim": None},
+    {"filename": "metrics_semantic_assistant.csv", "embeddings": "semantic", "role": "assistant", "trim": None},
+    {"filename": "metrics_lexical_trim1.csv", "embeddings": "lexical", "role": None, "trim": 1},
+    {"filename": "metrics_semantic_trim1.csv", "embeddings": "semantic", "role": None, "trim": 1},
+    {"filename": "metrics_lexical_user_trim1.csv", "embeddings": "lexical", "role": "user", "trim": 1},
+    {"filename": "metrics_semantic_user_trim1.csv", "embeddings": "semantic", "role": "user", "trim": 1},
+    {"filename": "metrics_lexical_assistant_trim1.csv", "embeddings": "lexical", "role": "assistant", "trim": 1},
+    {"filename": "metrics_semantic_assistant_trim1.csv", "embeddings": "semantic", "role": "assistant", "trim": 1},
+    {"filename": "metrics_lexical_trim2.csv", "embeddings": "lexical", "role": None, "trim": 2},
+    {"filename": "metrics_semantic_trim2.csv", "embeddings": "semantic", "role": None, "trim": 2},
+    {"filename": "metrics_lexical_user_trim2.csv", "embeddings": "lexical", "role": "user", "trim": 2},
+    {"filename": "metrics_semantic_user_trim2.csv", "embeddings": "semantic", "role": "user", "trim": 2},
+    {"filename": "metrics_lexical_assistant_trim2.csv", "embeddings": "lexical", "role": "assistant", "trim": 2},
+    {"filename": "metrics_semantic_assistant_trim2.csv", "embeddings": "semantic", "role": "assistant", "trim": 2},
+]
 
 class AttackFactory:
     def __init__(self, cfg, experiment_dir, logger):
@@ -107,10 +127,11 @@ class EncoderFactory:
         self.cfg = cfg
         self.experiment_dir = experiment_dir
         self.logger = logger
-
         self.memory_path = self.experiment_dir / MEMORY_FILENAME
-        self.embeddings_path = self.experiment_dir / EMBEDDINGS_FILENAME
-
+        self.embeddings_paths = {
+            name: self.experiment_dir / filename 
+            for name, filename in EMBEDDINGS_FILENAMES.items()
+            }
 
     def build_encoders(self):
         encoder_cfg = self.cfg.get("encoders", {})
@@ -118,52 +139,24 @@ class EncoderFactory:
         semantic_encoder = SemanticEncoder(encoder_cfg.get("semantic"))
         return {"lexical": lexical_encoder, "semantic": semantic_encoder}
 
-    def load_memory(self):
+    def load_prompt_memory_entries(self):
         with sqlite3.connect(self.memory_path) as conn:
-            attack_result_entries = pd.read_sql_query("SELECT * FROM AttackResultEntries;", conn)
-            prompt_memory_entries = pd.read_sql_query("SELECT * FROM PromptMemoryEntries;", conn)
-
-        df = prompt_memory_entries.merge(
-            attack_result_entries,
-            on=["conversation_id"],
-            how="left",
-            suffixes=("", "_attack_result"),
-        )
-
-        df.rename(columns={
-            "id_attack_result": "attack_result_id", 
-            "converted_value": "value"}, 
-            inplace=True
-        )
-
-        df = df[~df["attack_result_id"].isna()]
-
-        columns = [
-            "attack_result_id", "conversation_id", "last_score_id",
-            "objective", "executed_turns", "outcome", "outcome_reason",
-            "id", "role", "sequence", "value"
-        ]
-        df = df[columns]
-
-        df.sort_values(by=["attack_result_id", "sequence"], inplace=True)
-        df.reset_index(drop=True, inplace=True)
-        df.reset_index(inplace=True)
-        return df
+            are = pd.read_sql_query("SELECT * FROM AttackResultEntries;", conn)
+            pme = pd.read_sql_query("SELECT * FROM PromptMemoryEntries;", conn)
+        return pme[pme["conversation_id"].isin(are["conversation_id"])]
 
     def execute(self):
         encoders = self.build_encoders()
-        dataset = self.load_memory()
-
         for name, encoder in encoders.items():
             try:
-                embeddings = encoder.execute(dataset["value"].to_list())
-                dataset[f"embeddings_{name}"] = embeddings
+                df = self.load_prompt_memory_entries()
+                embeddings = encoder.execute(df["converted_value"].to_list())
+                df["embeddings"] = embeddings
+                df.to_parquet(self.embeddings_paths[name])
+                self.logger.info(f"{name} embeddings are saved as: %s", self.embeddings_paths[name])
             except Exception as e:
                 self.logger.error(f"Error encoding {name} embeddings: {e}")
                 continue
-        dataset.to_parquet(self.embeddings_path)
-
-        self.logger.info("Embeddings are saved as: %s", self.embeddings_path)
 
 
 class MetricsFactory:
@@ -171,60 +164,57 @@ class MetricsFactory:
         self.cfg = cfg
         self.experiment_dir = experiment_dir
         self.logger = logger
-        self.embeddings_path = self.experiment_dir / EMBEDDINGS_FILENAME
-        self.metrics_path = self.experiment_dir / METRICS_FILENAME
+        self.memory_path = self.experiment_dir / MEMORY_FILENAME
+        self.embeddings_paths = {name: self.experiment_dir / filename for name, filename in EMBEDDINGS_FILENAMES.items()}
+        self.metrics_configs = [config | {"path": experiment_dir / config["filename"]} for config in METRICS_CONFIGS]
+    
+    def load_attack_result_entries(self):
+        with sqlite3.connect(self.memory_path) as conn:
+            are = pd.read_sql_query("SELECT * FROM AttackResultEntries;", conn)
+        are.set_index("conversation_id", inplace=True)
+        return are.to_dict(orient="index")
+
+    def load_embeddings(self):
+        return {name: pd.read_parquet(self.embeddings_paths[name]) for name in EMBEDDINGS_FILENAMES.keys()}
+
+    @staticmethod
+    def get_trajectory(df, conversation_id, role=None, trim=None):
+        conversation = df[df["conversation_id"] == conversation_id]
+        conversation.sort_values(by=["sequence"], inplace=True)
+        conversation.reset_index(drop=True, inplace=True)
+        if trim is not None:
+            if len(conversation) > 2*trim:
+                conversation = conversation.iloc[:-2*trim]
+            else:
+                return None
+        if role is not None:
+            conversation = conversation[conversation["role"] == role]
+        
+        if len(conversation) <= 2:
+            return None
+        
+        traj = np.asarray(conversation["embeddings"].to_list(), dtype=np.float64)
+        return traj
 
     def execute(self) -> None:
-        data = pd.read_parquet(self.embeddings_path)
-
-        rows: list[dict] = []
-
-        for conversation_id in data["conversation_id"].unique():
-            conversation = data[data["conversation_id"] == conversation_id]
-            conversation = conversation.sort_values("sequence")
-
-            metrics = {
-                "conversation_id": conversation_id,
-                "outcome": conversation["outcome"].iloc[-1]
-            }
-
-            executed_turns = conversation["executed_turns"].iloc[-1]
-            for name, embeddings in [("lexical", "embeddings_lexical"), ("semantic", "embeddings_semantic")]:
-                embeddings = np.asarray(conversation[embeddings].tolist(), dtype=np.float64)
-                metrics.update(l2_norm_metrics(embeddings, prefix=name))
-
-                user_embeddings = embeddings[0::2, :]
-                metrics.update(l2_norm_metrics(user_embeddings, prefix=f"{name}_user"))
-
-                assistant_embeddings = embeddings[1::2, :]
-                metrics.update(l2_norm_metrics(assistant_embeddings, prefix=f"{name}_assistant"))
-
-                if executed_turns >= 2:
-                    early_embeddings = embeddings[:-2]
-                    metrics.update(l2_norm_metrics(early_embeddings, prefix=f"{name}_early"))
-
-                    user_early_embeddings = early_embeddings[0::2, :]
-                    metrics.update(l2_norm_metrics(user_early_embeddings, prefix=f"{name}_user_early"))
-
-                    assistant_early_embeddings = early_embeddings[1::2, :]
-                    metrics.update(l2_norm_metrics(assistant_early_embeddings, prefix=f"{name}_assistant_early"))
-
-                if executed_turns >= 3:
-                    very_early_embeddings = embeddings[:-4]
-                    metrics.update(l2_norm_metrics(very_early_embeddings, prefix=f"{name}_very_early"))
-
-                    user_very_early_embeddings = very_early_embeddings[0::2, :]
-                    metrics.update(l2_norm_metrics(user_very_early_embeddings, prefix=f"{name}_user_very_early"))
-
-                    assistant_very_early_embeddings = very_early_embeddings[1::2, :]
-                    metrics.update(l2_norm_metrics(assistant_very_early_embeddings, prefix=f"{name}_assistant_very_early"))
-
-
-            rows.append(metrics)
-
-        pd.DataFrame(rows).to_csv(self.metrics_path, index=False)
-        self.logger.info("Metrics are saved as: %s", self.metrics_path)
-
-
-# TODO: make dataclass for saving embeddings and calculating metrics
-# TODO: make early metrics calculation iterative 
+        embeddings = self.load_embeddings()
+        for config in self.metrics_configs:
+            try:
+                attack_results = self.load_attack_result_entries()
+                for conversation_id, result in attack_results.items():
+                    traj = self.get_trajectory(
+                        df=embeddings[config["embeddings"]], 
+                        conversation_id=conversation_id, 
+                        role=config["role"], 
+                        trim=config["trim"])
+                    if traj is not None:
+                        metrics = l2_norm_metrics(traj)
+                        result.update(metrics)
+                attack_results = pd.DataFrame.from_dict(attack_results, orient="index")
+                attack_results.reset_index(inplace=True)
+                attack_results.rename(columns={"index": "conversation_id"}, inplace=True)
+                attack_results.to_csv(config["path"], index=False)
+                self.logger.info("Metrics are saved as: %s", config["path"])
+            except Exception as e:
+                self.logger.error(f"Error calculating metrics for {config['filename']}: {e}")
+                continue
