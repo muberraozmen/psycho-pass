@@ -37,6 +37,3 @@ encoders:
     model_name: qwen/qwen3-embedding-8b
     max_context_tokens: 32000
     batch_size: 128
-
-metrics:
-  l2_norm_metrics: true

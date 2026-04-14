@@ -5,10 +5,10 @@ from dotenv import load_dotenv
 load_dotenv(".env")
 
 from src.utils import make_experiment
-from src.factory import AttackFactory, EncoderFactory, MetricsFactory
+from src.factory import AttackFactory, EncoderFactory, ClassifierFactory
 
 
-def main():
+def generation():
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name", type=str, help="Name of the experiment run")
     parser.add_argument("--config_file", type=str, default="base.yaml", help="Base config file")
@@ -30,16 +30,28 @@ def main():
 
     attack_factory = AttackFactory(cfg, experiment_dir, logger)
     encoder_factory = EncoderFactory(cfg, experiment_dir, logger)
-    metrics_factory = MetricsFactory(cfg, experiment_dir, logger)
 
     asyncio.run(attack_factory.execute())
     encoder_factory.execute()
-    metrics_factory.execute()
 
 
-if __name__ == "__main__":
-    main()
+def classification():
+    from pathlib import Path
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--run_dir", type=str, default="./experiments/objective_model_comparisons/", help="Run directory")
+    parser.add_argument("--min_turns", type=int, default=4, help="Min turns")
+    parser.add_argument("--max_turns", type=int, default=4, help="Max turns")
+    parser.add_argument("--embeddings", type=str, default="semantic", help="Embeddings")
+    parser.add_argument("--roles", type=str, default="conversation", help="Roles")
+    parser.add_argument("--trim", type=int, default=2, help="Trim")
+    parser.add_argument("--features", type=str, default="l2norm,executed_turns", help="Features")
+    args = parser.parse_args()
 
+    
+    classifier_factory = ClassifierFactory(vars(args), Path(args.run_dir))
+    data, performance, factors = classifier_factory.execute()
+    print(performance)
+    print(factors)
 
 
 

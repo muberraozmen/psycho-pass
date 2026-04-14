@@ -18,14 +18,16 @@ dependencies = [
     "scikit-learn>=1.4",
     "seaborn>=0.13.2",
     "tenacity>=8.0",
+    "pycatch22>=0.4.5"
 ]
 
 [project.scripts]
-psycho-pass = "run:main"
+generation = "cli:generation"
+classification = "cli:classification"
 
 [tool.setuptools]
 packages = ["src"]
-py-modules = ["run"]
+py-modules = ["cli"]
 
 [dependency-groups]
 dev = [

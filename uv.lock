@@ -2035,6 +2035,7 @@ dependencies = [
     { name = "openrouter" },
     { name = "pandas" },
     { name = "pyarrow" },
+    { name = "pycatch22" },
     { name = "pyrit" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
@@ -2054,6 +2055,7 @@ requires-dist = [
     { name = "openrouter", specifier = ">=0.1.0" },
     { name = "pandas", specifier = ">=2.0" },
     { name = "pyarrow", specifier = ">=14.0" },
+    { name = "pycatch22", specifier = ">=0.4.5" },
     { name = "pyrit", specifier = ">=0.11.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "pyyaml", specifier = ">=6.0" },
@@ -2125,6 +2127,12 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/cc/f1/11a544b8c3d38a759eb3fbb022039117fd633e9a7b19e4841cc3da091915/pyarrow-23.0.1-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:a09f3876e87f48bc2f13583ab551f0379e5dfb83210391e68ace404181a20690", size = 50629149, upload-time = "2026-02-16T10:13:57.238Z" },
     { url = "https://files.pythonhosted.org/packages/50/f2/c0e76a0b451ffdf0cf788932e182758eb7558953f4f27f1aff8e2518b653/pyarrow-23.0.1-cp314-cp314t-win_amd64.whl", hash = "sha256:527e8d899f14bd15b740cd5a54ad56b7f98044955373a17179d5956ddb93d9ce", size = 28365807, upload-time = "2026-02-16T10:14:03.892Z" },
 ]
+
+[[package]]
+name = "pycatch22"
+version = "0.4.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/84/9c/452f83ae4d0e1f0fc36317b6b15c7a07214a1cc7205e19b35d77253c6cad/pycatch22-0.4.5.tar.gz", hash = "sha256:7ec844c659f22bedc66847ac866ef2bd86ffbbd4d8114b5e97f699f20a6f9f81", size = 50311, upload-time = "2024-05-14T05:02:37.228Z" }
 
 [[package]]
 name = "pycparser"

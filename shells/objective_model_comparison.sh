@@ -6,43 +6,56 @@ cd "$ROOT"
 
 config_file="base.yaml"
 run_name="objective_model_comparisons"
-max_concurrency=10
+max_concurrency=32
 
-dataset_names=(
-  "adv_bench"
+dataset_names = (
+    "adv_bench"
+    "harmbench"
+    "airt_fairness"
+    "airt_harassment"
+    "airt_hate"
+    "airt_illegal"
+    "airt_imminent_crisis"
+    "airt_leakage"
+    "airt_malware"
+    "airt_misinformation"
+    "airt_scams"
+    "airt_sexual"
+    "airt_violence"
 )
 
 num_samples=1
 
 attack_types=(
-  "crescendo"
+    "crescendo"
 )
 
 attack_max_turns=4
 
 adversarial_model_names=(
-  "meta-llama/llama-3.1-8b-instruct"
+    "meta-llama/llama-3.1-8b-instruct"
 )
 
 scoring_model_names=(
-  "openai/gpt-oss-120b"
+    "openai/gpt-oss-120b"
 )
 
 objective_model_names=(
-  "mistralai/mistral-small-3.2-24b-instruct"
-  "qwen/qwen-2.5-7b-instruct"
-  "meta-llama/llama-3.1-8b-instruct"
-  "openai/gpt-oss-120b"
-  "google/gemma-3-27b-it"
-  "deepseek/deepseek-v3.2"
+    "meta-llama/llama-3.1-8b-instruct"
+    "openai/gpt-oss-120b"
+    "mistralai/mistral-small-3.2-24b-instruct"
+    "qwen/qwen-2.5-7b-instruct"
+    "google/gemma-3-27b-it"
+    "deepseek/deepseek-v3.2"
 )
+
 
 for dataset_name in "${dataset_names[@]}"; do
   for attack_type in "${attack_types[@]}"; do
     for adversarial_model_name in "${adversarial_model_names[@]}"; do
       for scoring_model_name in "${scoring_model_names[@]}"; do
         for objective_model_name in "${objective_model_names[@]}"; do
-          uv run python run.py \
+          generation \
             --config_file "$config_file" \
             --run_name "$run_name" \
             --max_concurrency "$max_concurrency" \
