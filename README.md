@@ -1,24 +1,25 @@
 # Psycho-Pass
 
-PsychoPass is a research codebase for studying the geometry of multi-turn adversarial LLM conversations.
+Psycho-Pass is a research codebase for studying the geometry of multi-turn adversarial LLM conversations.
 
-The pipeline is split into two stages:
+The workflow has two stages:
 
 1. **Generation**: run PyRIT attacks (`rta` or `crescendo`) and save conversation memory plus lexical/semantic embeddings.
-2. **Analysis**: compute trajectory features (L2 + catch22) and train classifiers (logistic regression and gradient boosting).
+2. **Analysis**: build trajectory features (L2 norm + catch22 + optional executed turns) and train classifiers (logistic regression and gradient boosting).
 
-## Repository layout
+## Repository Layout
 
 | Path | Purpose |
 |------|---------|
-| `cli.py` | Main entrypoints: `generation()` and `analysis(...)` |
+| `cli.py` | CLI entrypoints: `generation` and `analysis` |
 | `src/attacks.py` | Attack wrappers for PyRIT RedTeam and Crescendo |
 | `src/encoders.py` | `LexicalEncoder` (TF-IDF) and `SemanticEncoder` (OpenRouter embeddings) |
 | `src/features.py` | L2 trajectory features and selected catch22 features |
-| `src/classifiers.py` | Model training/evaluation + significant factor extraction |
-| `src/factory.py` | Orchestration factories for attack, encoding, feature extraction, and classification |
+| `src/classifiers.py` | Classifier training/evaluation + factor extraction |
+| `src/factory.py` | Orchestration for attacks, encoders, features, and classifiers |
 | `src/utils.py` | Experiment directory creation, config snapshotting, logging |
-| `shells/principal.sh` | Reproducible generation sweep across datasets/objective models |
+| `shells/generation.sh` | Reproducible generation sweep across datasets/objective models |
+| `shells/analysis.sh` | Reproducible analysis experiment suite |
 | `notebooks/` | Exploration and analysis notebooks |
 
 ## Requirements
@@ -34,7 +35,7 @@ source .venv/bin/activate
 uv sync
 ```
 
-## Environment variables
+## Environment Variables
 
 Create `.env` at the project root:
 
@@ -43,17 +44,18 @@ OPENROUTER_API_KEY=...
 OPENROUTER_CHAT_ENDPOINT=https://openrouter.ai/api/v1
 ```
 
-Both attack generation and semantic embeddings use OpenRouter credentials.
+OpenRouter credentials are used by both attack generation and semantic embeddings.
 
-## Stage 1: Generate attack trajectories
+## Run Generation
 
-After install, the `generation` console script is available from `pyproject.toml`.
+After install, the `generation` console script is available via `pyproject.toml`.
 
 Minimal example:
 
 ```bash
 generation \
-  --run_name demo \
+  --run_name generation/demo \
+  --max_concurrency 16 \
   --seeds.dataset_names adv_bench harmbench \
   --seeds.num_samples 1 \
   --attack.type crescendo \
@@ -64,18 +66,22 @@ generation \
   --attack.scoring.model_name openai/gpt-oss-120b \
   --attack.objective.model_name meta-llama/llama-3.1-8b-instruct \
   --encoders.lexical.max_features 4096 \
-  --encoders.semantic.model_name qwen/qwen3-embedding-8b
+  --encoders.lexical.stop_words english \
+  --encoders.lexical.max_df 0.95 \
+  --encoders.semantic.model_name qwen/qwen3-embedding-8b \
+  --encoders.semantic.max_context_tokens 32000 \
+  --encoders.semantic.batch_size 128
 ```
 
-For the full principal run used in the project, use:
+Run the full generation sweep used in this repo:
 
 ```bash
-bash shells/principal.sh
+bash shells/generation.sh
 ```
 
-### Generation outputs
+### Generation Outputs
 
-Each run creates `experiments/<run_name>/<timestamp>/` with:
+Each run writes to `experiments/<run_name>/`:
 
 - `config.json`: resolved run configuration
 - `out.log`: run logs
@@ -83,41 +89,52 @@ Each run creates `experiments/<run_name>/<timestamp>/` with:
 - `embeddings_lexical.parquet`: TF-IDF embeddings per message
 - `embeddings_semantic.parquet`: dense embeddings per message
 
-## Stage 2: Feature extraction and classification
+## Run Analysis
 
-Analysis is configured through JSON files in `configs/` (for example `experiment2a.json`, `experiment3b.json`, `tune.json`).
+The `analysis` CLI takes feature/classifier options directly as flags plus one or more `--dataset_dirs`.
 
-Expected config sections:
+Example:
 
-- `features`:
-  - filters: `min_executed_turns`, `max_executed_turns`
-  - trajectory scope: `use_embeddings`, `use_roles`, `use_features`
-  - trimming: `trim_to_first_n_turns` or `trim_the_last_n_turns`
-- `classifiers`:
-  - `logistic_regression` hyperparameter grid (e.g. `C`)
-  - `gradient_boosting` hyperparameter grid (`learning_rate`, `max_depth`, `l2_regularization`)
-
-Run analysis from Python:
-
-```python
-from cli import analysis
-
-results = analysis(run_name, config_file, dataset_dirs)
+```bash
+analysis \
+  --run_name analysis/exp1a \
+  --features.use_embeddings semantic lexical \
+  --features.use_roles conversation assistant user \
+  --features.use_features l2norm catch22 executed_turns \
+  --classifiers.logistic_regression.C 1.0 \
+  --classifiers.gradient_boosting.learning_rate 0.1 \
+  --classifiers.gradient_boosting.max_depth 3 \
+  --classifiers.gradient_boosting.l2_regularization 0.01 \
+  --dataset_dirs \
+    experiments/generation/gpt-oss-120b \
+    experiments/generation/llama-3.1-8b-instruct
 ```
 
-### Analysis outputs
+Common feature options:
 
-Analysis writes to a new timestamped experiment directory:
+- Filtering: `--features.min_executed_turns`, `--features.max_executed_turns`
+- Scope: `--features.use_embeddings`, `--features.use_roles`, `--features.use_features`
+- Trimming (mutually exclusive): `--features.trim_to_first_n_turns` or `--features.trim_the_last_n_turns`
 
-- `features.csv`: conversation-level feature table + `outcome`
+Run the full analysis suite:
+
+```bash
+bash shells/analysis.sh
+```
+
+### Analysis Outputs
+
+Each analysis run writes to `experiments/<run_name>/`:
+
+- `features.csv`: conversation-level feature table with `outcome`
 - `out.log`: metrics and classifier summaries
-- `config.json`: copied analysis config with `run_name`
+- `config.json`: resolved analysis configuration
 
-## Feature set summary
+## Feature Set Summary
 
 `src/features.py` currently computes:
 
 - **L2 trajectory features**: `distance`, `displacement`, `speed`, `speed_std`, `velocity`, `directness`, `circularity`
 - **catch22 subset**: `outlier_timing_pos`, `outlier_timing_neg`, `high_fluctuation`, `stretch_decreasing`, `stretch_high`, `trev`
 
-For catch22, features are computed over top-variance embedding dimensions (`top_k=100`) and aggregated with `mean`, `max`, `min`, `std`.
+For catch22, features are computed over top-variance embedding dimensions (`top_k=100`) and aggregated with `mean`, `max`, `min`, and `std`.
