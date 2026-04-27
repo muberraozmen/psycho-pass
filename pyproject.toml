@@ -12,18 +12,18 @@ dependencies = [
     "openrouter>=0.1.0",
     "pandas>=2.0",
     "pyarrow>=14.0",
+    "pycatch22>=0.4.5",
     "pyrit>=0.11.0",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0",
     "scikit-learn>=1.4",
     "seaborn>=0.13.2",
     "tenacity>=8.0",
-    "pycatch22>=0.4.5"
 ]
 
 [project.scripts]
 generation = "cli:generation"
-classification = "cli:classification"
+analysis = "cli:analysis"
 
 [tool.setuptools]
 packages = ["src"]

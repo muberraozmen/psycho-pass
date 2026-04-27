@@ -1,113 +1,123 @@
 # Psycho-Pass
 
-End-to-end red-teaming pipeline: run **PyRIT** attacks (RTA or Crescendo) against a chat API, persist results in SQLite, build **lexical** (TF-IDF) and **semantic** (OpenRouter embeddings) trajectories per conversation, then compute **L2 geometry metrics** (path length, displacement, directness, speed statistics, circularity) for each trajectory—split by lexical vs semantic encoders.
+PsychoPass is a research codebase for studying the geometry of multi-turn adversarial LLM conversations.
 
-A single entrypoint orchestrates all stages: attacks → embeddings → metrics.
+The pipeline is split into two stages:
 
----
+1. **Generation**: run PyRIT attacks (`rta` or `crescendo`) and save conversation memory plus lexical/semantic embeddings.
+2. **Analysis**: compute trajectory features (L2 + catch22) and train classifiers (logistic regression and gradient boosting).
 
 ## Repository layout
 
-| Area | Role |
-|------|------|
-| `run.py` | CLI: loads YAML config, creates an experiment directory, runs attack → encoder → metrics pipeline |
-| `src/attacks.py` | `RTA` and `Crescendo` attacks; OpenAI-compatible chat via PyRIT `OpenAIChatTarget` |
-| `src/factory.py` | `AttackFactory` (async attacks, PyRIT memory), `EncoderFactory` (Parquet embeddings), `MetricsFactory` (CSV metrics) |
-| `src/encoders.py` | `LexicalEncoder` (scikit-learn TF-IDF), `SemanticEncoder` (OpenRouter embeddings API) |
-| `src/metrics.py` | `l2_norm_metrics`: trajectory statistics in embedding space |
-| `src/utils.py` | `make_experiment`: merge CLI args into config, create `experiments/…` dir, logging |
-| `configs/` | YAML experiment configs (e.g. `base.yaml`, model-specific variants under `model_iterations/`) |
-
----
+| Path | Purpose |
+|------|---------|
+| `cli.py` | Main entrypoints: `generation()` and `analysis(...)` |
+| `src/attacks.py` | Attack wrappers for PyRIT RedTeam and Crescendo |
+| `src/encoders.py` | `LexicalEncoder` (TF-IDF) and `SemanticEncoder` (OpenRouter embeddings) |
+| `src/features.py` | L2 trajectory features and selected catch22 features |
+| `src/classifiers.py` | Model training/evaluation + significant factor extraction |
+| `src/factory.py` | Orchestration factories for attack, encoding, feature extraction, and classification |
+| `src/utils.py` | Experiment directory creation, config snapshotting, logging |
+| `shells/principal.sh` | Reproducible generation sweep across datasets/objective models |
+| `notebooks/` | Exploration and analysis notebooks |
 
 ## Requirements
 
-- **Python 3.12+**
-- **[uv](https://docs.astral.sh/uv/)** (recommended) or another PEP 517 installer
-
----
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/) (recommended)
 
 ## Setup
 
 ```bash
 uv venv --python 3.12
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 uv sync
 ```
 
-This installs dependencies from `pyproject.toml` and locks versions via `uv.lock`.
-
----
-
 ## Environment variables
 
-Create a `.env` file in the project root (`run.py` loads it with `python-dotenv`).
-
-**Chat completions (attacks)** — used by `src/attacks.py` for adversarial, scoring, and objective models:
-
-| Variable | Purpose |
-|----------|---------|
-| `OPENROUTER_API_KEY` | API key for OpenRouter |
-| `OPENROUTER_CHAT_ENDPOINT` | OpenAI-compatible base URL (typically `https://openrouter.ai/api/v1` for chat completions) |
-
-**Embeddings** — used by `SemanticEncoder` in `src/encoders.py`:
-
-| Variable | Purpose |
-|----------|---------|
-| `OPENROUTER_API_KEY` | Same key; required for semantic embedding requests |
-
-Ensure your OpenRouter account and models match the `model_name` fields in your YAML (e.g. `meta-llama/llama-3.1-8b-instruct` for chat, `qwen/qwen3-embedding-8b` for embeddings).
-
----
-
-## Configuration
-
-Configs are YAML files under `configs/`. The CLI flag `--base_config` is resolved relative to `configs/` (default: `base.yaml`).
-
-Typical sections:
-
-- **`seeds`**: `dataset_name` (PyRIT `SeedDatasetProvider`, e.g. `adv_bench`), `num_samples` (replication factor for seeds)
-- **`attack`**: `type` (`rta` or `crescendo`), `max_turns`, `scoring_threshold`, optional `max_backtracks` (Crescendo), and nested `adversarial` / `scoring` / `objective` blocks (`model_name`, `temperature`, `top_p`, `max_completion_tokens`, …)
-- **`encoders`**: `lexical` (TF-IDF: `max_features`, `stop_words`, `min_df`, `max_df`) and `semantic` (`model_name`, `max_context_tokens` for truncation)
-- **`metrics`**: reserved for future toggles; L2 metrics are always computed for both encoder outputs when present
-
-See `configs/base.yaml` and `configs/model_iterations/` for examples.
-
----
-
-## Run
+Create `.env` at the project root:
 
 ```bash
-python run.py --base_config base.yaml --max_concurrency 3
+OPENROUTER_API_KEY=...
+OPENROUTER_CHAT_ENDPOINT=https://openrouter.ai/api/v1
 ```
 
-Optional:
+Both attack generation and semantic embeddings use OpenRouter credentials.
 
-- `--run_name my_run` — results go under `experiments/my_run/<timestamp>/`
-- Without `--run_name` — `experiments/<timestamp>/`
+## Stage 1: Generate attack trajectories
 
-After `uv sync`, you can also use the installed console script:
+After install, the `generation` console script is available from `pyproject.toml`.
+
+Minimal example:
 
 ```bash
-psycho-pass --base_config base.yaml --max_concurrency 3
+generation \
+  --run_name demo \
+  --seeds.dataset_names adv_bench harmbench \
+  --seeds.num_samples 1 \
+  --attack.type crescendo \
+  --attack.max_turns 8 \
+  --attack.max_backtracks 2 \
+  --attack.scoring_threshold 0.8 \
+  --attack.adversarial.model_name meta-llama/llama-3.1-8b-instruct \
+  --attack.scoring.model_name openai/gpt-oss-120b \
+  --attack.objective.model_name meta-llama/llama-3.1-8b-instruct \
+  --encoders.lexical.max_features 4096 \
+  --encoders.semantic.model_name qwen/qwen3-embedding-8b
 ```
 
----
+For the full principal run used in the project, use:
 
-## Outputs (per experiment directory)
+```bash
+bash shells/principal.sh
+```
 
-| File | Contents |
-|------|----------|
-| `config.json` | Resolved configuration (CLI merged into YAML) |
-| `out.log` | Run log |
-| `memory.db` | PyRIT SQLite memory (`AttackFactory`) |
-| `embeddings.parquet` | Merged prompt/attack rows with `embeddings_lexical` and `embeddings_semantic` columns |
-| `metrics.csv` | One row per `conversation_id`: outcomes, roles, sequences, and `lexical_*` / `semantic_*` metric columns from `l2_norm_metrics` |
+### Generation outputs
 
-The `experiments/` directory is ignored by git (see `.gitignore`).
+Each run creates `experiments/<run_name>/<timestamp>/` with:
 
----
+- `config.json`: resolved run configuration
+- `out.log`: run logs
+- `memory.db`: PyRIT SQLite memory
+- `embeddings_lexical.parquet`: TF-IDF embeddings per message
+- `embeddings_semantic.parquet`: dense embeddings per message
 
-## Metrics (embedding trajectories)
+## Stage 2: Feature extraction and classification
 
-For each conversation, message-level embeddings are ordered by `sequence`. `l2_norm_metrics` reports quantities such as total path length, displacement (start→end distance), directness (displacement / path length), per-step speed stats, a velocity term (displacement divided by number of steps), and circularity for trajectories with at least three points. Short conversations (fewer than two points) yield `nan` for most fields.
+Analysis is configured through JSON files in `configs/` (for example `experiment2a.json`, `experiment3b.json`, `tune.json`).
+
+Expected config sections:
+
+- `features`:
+  - filters: `min_executed_turns`, `max_executed_turns`
+  - trajectory scope: `use_embeddings`, `use_roles`, `use_features`
+  - trimming: `trim_to_first_n_turns` or `trim_the_last_n_turns`
+- `classifiers`:
+  - `logistic_regression` hyperparameter grid (e.g. `C`)
+  - `gradient_boosting` hyperparameter grid (`learning_rate`, `max_depth`, `l2_regularization`)
+
+Run analysis from Python:
+
+```python
+from cli import analysis
+
+results = analysis(run_name, config_file, dataset_dirs)
+```
+
+### Analysis outputs
+
+Analysis writes to a new timestamped experiment directory:
+
+- `features.csv`: conversation-level feature table + `outcome`
+- `out.log`: metrics and classifier summaries
+- `config.json`: copied analysis config with `run_name`
+
+## Feature set summary
+
+`src/features.py` currently computes:
+
+- **L2 trajectory features**: `distance`, `displacement`, `speed`, `speed_std`, `velocity`, `directness`, `circularity`
+- **catch22 subset**: `outlier_timing_pos`, `outlier_timing_neg`, `high_fluctuation`, `stretch_decreasing`, `stretch_high`, `trev`
+
+For catch22, features are computed over top-variance embedding dimensions (`top_k=100`) and aggregated with `mean`, `max`, `min`, `std`.

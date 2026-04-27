@@ -5,24 +5,50 @@ from dotenv import load_dotenv
 load_dotenv(".env")
 
 from src.utils import make_experiment
-from src.factory import AttackFactory, EncoderFactory, ClassifierFactory
+from src.factory import AttackFactory, EncoderFactory, FeaturesFactory, ClassifierFactory
 
 
 def generation():
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name", type=str, help="Name of the experiment run")
-    parser.add_argument("--config_file", type=str, default="base.yaml", help="Base config file")
     parser.add_argument("--max_concurrency", type=int, default=10, help="Max concurrent attacks")
 
-    parser.add_argument("--seeds.dataset_name", type=str, help="Dataset name")
+    parser.add_argument(
+        "--seeds.dataset_names",
+        nargs="+",
+        required=True,
+        metavar="NAME",
+        help="One or more dataset names (repeatable tokens, e.g. adv_bench harmbench)",
+    )
     parser.add_argument("--seeds.num_samples", type=int, default=1, help="Number of samples")
     
-    parser.add_argument("--attack.type", type=str, help="Attack type")
-    parser.add_argument("--attack.max_turns", type=int, help="Max turns")
+    parser.add_argument("--attack.type", type=str, default="crescendo", help="Attack type")
+    parser.add_argument("--attack.max_turns", type=int, default=8, help="Max turns")
+    parser.add_argument("--attack.max_backtracks", type=int, default=2, help="Max backtracks")
+    parser.add_argument("--attack.scoring_threshold", type=float, default=0.8, help="Scoring threshold")
     
-    parser.add_argument("--attack.adversarial.model_name", type=str, help="Adversarial model name")
-    parser.add_argument("--attack.scoring.model_name", type=str, help="Scoring model name")
-    parser.add_argument("--attack.objective.model_name", type=str, help="Objective model name")
+    parser.add_argument("--attack.adversarial.model_name", type=str, default="meta-llama/llama-3.1-8b-instruct", help="Adversarial model name")
+    parser.add_argument("--attack.adversarial.temperature", type=float, default=1.0, help="Adversarial temperature")
+    parser.add_argument("--attack.adversarial.top_p", type=float, default=1.0, help="Adversarial top p")
+    parser.add_argument("--attack.adversarial.max_completion_tokens", type=int, default=1024, help="Adversarial max completion tokens")
+    
+    parser.add_argument("--attack.scoring.model_name", type=str, default="openai/gpt-oss-120b", help="Scoring model name")
+    parser.add_argument("--attack.scoring.temperature", type=float, default=0.1, help="Scoring temperature")
+    parser.add_argument("--attack.scoring.top_p", type=float, default=1.0, help="Scoring top p")
+    parser.add_argument("--attack.scoring.max_completion_tokens", type=int, default=1024, help="Scoring max completion tokens")
+    
+    parser.add_argument("--attack.objective.model_name", type=str, default="meta-llama/llama-3.1-8b-instruct", help="Objective model name")
+    parser.add_argument("--attack.objective.temperature", type=float, default=1.0, help="Objective temperature")
+    parser.add_argument("--attack.objective.top_p", type=float, default=1.0, help="Objective top p")
+    parser.add_argument("--attack.objective.max_completion_tokens", type=int, default=1024, help="Objective max completion tokens")
+
+    parser.add_argument("--encoders.lexical.max_features", type=int, default=4096, help="Lexical max features")
+    parser.add_argument("--encoders.lexical.stop_words", type=str, default="english", help="Lexical stop words")
+    parser.add_argument("--encoders.lexical.max_df", type=float, default=0.95, help="Lexical max df")
+    
+    parser.add_argument("--encoders.semantic.model_name", type=str, default="qwen/qwen3-embedding-8b", help="Semantic model name")
+    parser.add_argument("--encoders.semantic.max_context_tokens", type=int, default=32000, help="Semantic max context tokens") 
+    parser.add_argument("--encoders.semantic.batch_size", type=int, default=128, help="Semantic batch size")
 
     args = parser.parse_args()
     
@@ -35,33 +61,39 @@ def generation():
     encoder_factory.execute()
 
 
-def classification():
+def analysis():
     from pathlib import Path
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("--run_dir", type=str, default="./experiments/objective_model_comparisons/", help="Run directory")
-    parser.add_argument("--min_turns", type=int, default=4, help="Min turns")
-    parser.add_argument("--max_turns", type=int, default=4, help="Max turns")
-    parser.add_argument("--embeddings", type=str, default="semantic", help="Embeddings")
-    parser.add_argument("--roles", type=str, default="conversation", help="Roles")
-    parser.add_argument("--trim", type=int, default=2, help="Trim")
-    parser.add_argument("--features", type=str, default="l2norm,executed_turns", help="Features")
+    parser.add_argument("--run_name", type=str, help="Name of the experiment run")
+
+    parser.add_argument("--features.min_executed_turns", type=int, help="Minimum number of executed turns")
+    parser.add_argument("--features.max_executed_turns", type=int, help="Maximum number of executed turns")
+    
+    parser.add_argument("--features.use_embeddings", nargs="+", type=str, help="Embeddings to use")
+    parser.add_argument("--features.use_roles", nargs="+", type=str, help="Roles to use")
+    parser.add_argument("--features.use_features", nargs="+", type=str, help="Features to use")
+    
+    parser.add_argument("--features.trim_to_first_n_turns", type=int, help="Trim to first n turns")
+    parser.add_argument("--features.trim_the_last_n_turns", type=int, help="Trim the last n turns")
+
+    parser.add_argument("--classifiers.logistic_regression.C", type=float, help="C value for logistic regression")
+
+    parser.add_argument("--classifiers.gradient_boosting.learning_rate", type=float, help="Learning rate for gradient boosting")
+    parser.add_argument("--classifiers.gradient_boosting.max_depth", type=int, help="Max depth for gradient boosting")
+    parser.add_argument("--classifiers.gradient_boosting.l2_regularization", type=float, help="L2 regularization for gradient boosting")
+
+    parser.add_argument("--dataset_dirs", nargs="+", type=str, help="Paths to the dataset directories")
+    
     args = parser.parse_args()
 
+    cfg, experiment_dir, logger = make_experiment(args)
+
+    dataset_dirs = [Path(dataset_dir) for dataset_dir in args.dataset_dirs]
+
+    features_factory = FeaturesFactory(cfg, experiment_dir, logger)
+    classifier_factory = ClassifierFactory(cfg, experiment_dir, logger)
+
+    features_factory.execute(dataset_dirs)
+    results = classifier_factory.execute()
     
-    classifier_factory = ClassifierFactory(vars(args), Path(args.run_dir))
-    data, performance, factors = classifier_factory.execute()
-    print(performance)
-    print(factors)
-
-
-
-
-
-
-
-
-
-
-
-
-
