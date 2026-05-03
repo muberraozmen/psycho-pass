@@ -280,7 +280,6 @@ class FeaturesFactory:
         self.logger.info(f"Conversations are saved as: {self.experiment_dir / CONVERSATIONS_FILENAME}")
 
 
-
 class ClassifierFactory:
     def __init__(self, cfg, experiment_dir, logger):
         self.cfg = cfg
@@ -290,8 +289,6 @@ class ClassifierFactory:
         self.baselines = [baseline_name for baseline_name, baseline_setup in self.cfg.get("baselines", {}).items() if baseline_setup]
 
     def execute(self):
-        results = []
-
         data = pd.read_csv(self.experiment_dir / FEATURES_FILENAME, index_col=0)
         X = data.drop(columns=["outcome"])
         y = data["outcome"]
@@ -310,20 +307,20 @@ class ClassifierFactory:
             else:
                 raise ValueError(f"Unsupported classifier: {classifier_name}")
 
-            performance, factors = classifier(X, y, test_idx, hyperparameters)
+            predictions, performance, factors = classifier(X, y, test_idx, hyperparameters)
             performance_table = performance.to_string(index=False, line_width=10_000)
             factors_table = factors.to_string(index=False, line_width=10_000)
 
-            self.logger.info(f"Classifier: {classifier.__name__}")
+            self.logger.info(f"Classifier: {classifier_name}")
             self.logger.info(f"Hyperparameters: {hyperparameters}")
             self.logger.info("Performance:\n%s", performance_table)
             self.logger.info("Factors:\n%s", factors_table)
 
-            results.append((classifier_name, performance, factors))
+            predictions.to_csv(self.experiment_dir / f"predictions_{classifier_name}.csv")
 
         for baseline_name in self.baselines:
             if baseline_name == "llama_guard":
-                performance = asyncio.run(llama_guard(conversations, y, test_idx))
+                predictions, performance = asyncio.run(llama_guard(conversations, y, test_idx))
             else:
                 raise ValueError(f"Unsupported baseline: {baseline_name}")
 
@@ -332,7 +329,8 @@ class ClassifierFactory:
             self.logger.info(f"Baseline: {baseline_name}")
             self.logger.info("Performance:\n%s", performance_table)
 
-            results.append((baseline_name, performance))
+            predictions.to_csv(self.experiment_dir / f"predictions_{baseline_name}.csv")
+
 
         
 

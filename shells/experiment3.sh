@@ -15,7 +15,6 @@ dataset_dirs=(
 analysis \
     --run_name "analysis/experiment3a" \
     --features.trim_to_first_n_turns 6 \
-    --features.trim_the_last_n_turns 1 \
     --features.use_embeddings "lexical" \
     --features.use_roles "conversation" "assistant" "user" \
     --features.use_features "l2norm" "catch22" \
@@ -29,7 +28,7 @@ analysis \
 analysis \
     --run_name "analysis/experiment3b" \
     --features.trim_to_first_n_turns 6 \
-    --features.trim_the_last_n_turns 2 \
+    --features.trim_the_last_n_turns 1 \
     --features.use_embeddings "lexical" \
     --features.use_roles "conversation" "assistant" "user" \
     --features.use_features "l2norm" "catch22" \
@@ -43,7 +42,7 @@ analysis \
 analysis \
     --run_name "analysis/experiment3c" \
     --features.trim_to_first_n_turns 6 \
-    --features.trim_the_last_n_turns 3 \
+    --features.trim_the_last_n_turns 2 \
     --features.use_embeddings "lexical" \
     --features.use_roles "conversation" "assistant" "user" \
     --features.use_features "l2norm" "catch22" \
@@ -57,7 +56,7 @@ analysis \
 analysis \
     --run_name "analysis/experiment3d" \
     --features.trim_to_first_n_turns 6 \
-    --features.trim_the_last_n_turns 4 \
+    --features.trim_the_last_n_turns 3 \
     --features.use_embeddings "lexical" \
     --features.use_roles "conversation" "assistant" "user" \
     --features.use_features "l2norm" "catch22" \
@@ -71,7 +70,7 @@ analysis \
 analysis \
     --run_name "analysis/experiment3e" \
     --features.trim_to_first_n_turns 6 \
-    --features.trim_the_last_n_turns 5 \
+    --features.trim_the_last_n_turns 4 \
     --features.use_embeddings "lexical" \
     --features.use_roles "conversation" "assistant" "user" \
     --features.use_features "l2norm" "catch22" \

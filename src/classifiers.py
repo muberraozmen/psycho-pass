@@ -4,7 +4,6 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, average_precision_score, roc_auc_score
 import asyncio
@@ -19,13 +18,15 @@ DEFAULT_SCORING = 'f1'
 API_KEY = os.environ["OPENROUTER_API_KEY"]
 
 
-def classification_performance(y_true: np.ndarray, y_pred: np.ndarray) -> pd.DataFrame:
+def classification_performance(predictions) -> pd.DataFrame:
+    y_true, y_score = predictions["outcome"].to_numpy(), predictions["prediction"].to_numpy()
+    y_pred = (y_score >= 0.5).astype(int)
     accuracy = accuracy_score(y_true, y_pred)
     precision = precision_score(y_true, y_pred)
     recall = recall_score(y_true, y_pred)
     f1 = f1_score(y_true, y_pred)
-    average_precision = average_precision_score(y_true, y_pred)
-    roc_auc = roc_auc_score(y_true, y_pred)
+    average_precision = average_precision_score(y_true, y_score)
+    roc_auc = roc_auc_score(y_true, y_score)
     performance = pd.DataFrame({
         "Metric": ["accuracy", "precision", "recall", "f1", "average_precision", "roc_auc"],
         "Value": [float(accuracy), float(precision), float(recall), float(f1), float(average_precision), float(roc_auc)]
@@ -82,15 +83,16 @@ def logistic_regression(X: pd.DataFrame, y:pd.Series, test_idx:set, hyperparamet
         class_weight='balanced'
     )
     model.fit(X_train, y_train)
-    
+
     # Evaluation
-    y_pred = model.predict(X_test)
-    performance = classification_performance(y_test.to_numpy(), y_pred)
+    y_score = model.predict_proba(X_test)[:, 1]
+    predictions = pd.concat([y_test, pd.Series(y_score, name='prediction', index=y_test.index)], axis=1)
+    performance = classification_performance(predictions)
 
     # Extract Significant Factors
     factors = extract_significant_factors(model, X_test, y_test, feature_names)
-        
-    return performance, factors
+
+    return predictions, performance, factors
 
 
 def gradient_boosting(X: pd.DataFrame, y: pd.Series, test_idx: set, hyperparameters: dict) -> pd.DataFrame:
@@ -120,13 +122,14 @@ def gradient_boosting(X: pd.DataFrame, y: pd.Series, test_idx: set, hyperparamet
     model.fit(X_train, y_train)
 
     # Evaluation
-    y_pred = model.predict(X_test)
-    performance = classification_performance(y_test.to_numpy(), y_pred)
+    y_score = model.predict_proba(X_test)[:, 1]
+    predictions = pd.concat([y_test, pd.Series(y_score, name='prediction', index=y_test.index)], axis=1)
+    performance = classification_performance(predictions)
 
     # Extract Significant Factors
     factors = extract_significant_factors(model, X_test, y_test, feature_names)
 
-    return performance, factors
+    return predictions, performance, factors
 
 
 async def _llama_guard_task(client, semaphore, conversation_id, messages):
@@ -152,26 +155,17 @@ async def llama_guard(conversations: dict, y: pd.Series, test_idx: set):
         ]
         outcomes = await asyncio.gather(*tasks, return_exceptions=True)
 
-    predictions = {}
+    y_pred = {}
     failures = 0
     for outcome in outcomes:
         if isinstance(outcome, Exception):
             failures += 1
             continue
         cid, pred = outcome
-        predictions[cid] = pred
+        y_pred[cid] = pred
 
-    if failures:
-        # swap for self.logger.warning if you thread the logger through
-        print(f"llama_guard: {failures}/{len(outcomes)} requests failed after retries")
+    predictions = pd.concat([y, pd.Series(y_pred, name="prediction")], join="inner", axis=1)
 
-    if not predictions:
-        raise RuntimeError("llama_guard produced no predictions — all requests failed.")
+    performance = classification_performance(predictions)
 
-    y_pred = pd.Series(predictions, name="prediction")
-    results = pd.concat([y_pred, y], join="inner", axis=1)
-
-    return classification_performance(
-        results["outcome"].to_numpy(),
-        results["prediction"].to_numpy(),
-    )
+    return predictions, performance

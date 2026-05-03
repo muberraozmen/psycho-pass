@@ -94,5 +94,5 @@ def analysis():
     classifier_factory = ClassifierFactory(cfg, experiment_dir, logger)
 
     features_factory.execute(dataset_dirs)
-    results = classifier_factory.execute()
+    classifier_factory.execute()
     
