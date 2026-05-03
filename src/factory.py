@@ -1,8 +1,9 @@
 from __future__ import annotations
 from datetime import datetime
-from itertools import product
+import json
 import numpy as np
 import pandas as pd
+import random
 import asyncio
 import sqlite3
 from tenacity import (
@@ -25,6 +26,8 @@ EMBEDDINGS_FILENAMES = {
     "semantic": "embeddings_semantic.parquet",
 }
 FEATURES_FILENAME = "features.csv"
+CONVERSATIONS_FILENAME = "conversations.json"
+DEFAULT_TEST_SIZE = 0.2
 
 
 class AttackFactory:
@@ -152,25 +155,15 @@ class FeaturesFactory:
         
         features_cfg = self.cfg.get("features", {})
 
-        # Filters on attack results
-        self.min_executed_turns = features_cfg.get("min_executed_turns", None)
-        self.max_executed_turns = features_cfg.get("max_executed_turns", None)
+        # Configuration on trimming 
+        self.trim_to_first_n_turns = features_cfg.get("trim_to_first_n_turns", None)
+        self.trim_the_last_n_turns = features_cfg.get("trim_the_last_n_turns", None)
 
         # Filters on trajectories
         self.use_embeddings = features_cfg.get("use_embeddings", ["semantic", "lexical"])
         self.use_roles = features_cfg.get("use_roles", ["conversation", "assistant", "user"])
         self.use_features = features_cfg.get("use_features", ["l2norm", "executed_turns"])
 
-        # Configuration on trimming (at most one non-None)
-        self.trim_to_first_n_turns = features_cfg.get("trim_to_first_n_turns", None)
-        self.trim_the_last_n_turns = features_cfg.get("trim_the_last_n_turns", None)
-        if (
-            self.trim_to_first_n_turns is not None
-            and self.trim_the_last_n_turns is not None
-        ):
-            raise ValueError(
-                "Set at most one of trim_to_first_n_turns and trim_the_last_n_turns."
-            )
 
     def load_attack_results(self, dataset_dir):
         with sqlite3.connect(dataset_dir / MEMORY_FILENAME) as conn:
@@ -180,24 +173,26 @@ class FeaturesFactory:
         are.set_index("conversation_id", inplace=True)
         return are.to_dict(orient="index")
 
-    def filter_by_num_turns(self, trajectories):
-        trajectories["sequence_length"] = trajectories.groupby("conversation_id")["conversation_id"].transform("size")
-        
-        if self.min_executed_turns is not None:
-            trajectories = trajectories[trajectories["sequence_length"] >= 2*self.min_executed_turns]
-        
-        if self.max_executed_turns is not None:
-            trajectories = trajectories[trajectories["sequence_length"] <= 2*self.max_executed_turns]
+    def load_prompt_memory_entries(self, dataset_dir):
+        with sqlite3.connect(dataset_dir / MEMORY_FILENAME) as conn:
+            are = pd.read_sql_query("SELECT * FROM AttackResultEntries;", conn)
+            pme = pd.read_sql_query("SELECT * FROM PromptMemoryEntries;", conn)
+        pme = pme[pme["conversation_id"].isin(are["conversation_id"])]
+        return pme
+
+    def filter_by_num_turns(self, messages):
+        messages["sequence_length"] = messages.groupby("conversation_id")["conversation_id"].transform("size")
 
         if self.trim_to_first_n_turns is not None:
-            trajectories = trajectories[trajectories["sequence_length"] >= 2*self.trim_to_first_n_turns]
-            trajectories = trajectories[trajectories["sequence"] < self.trim_to_first_n_turns * 2]
+            messages = messages[messages["sequence_length"] >= 2*self.trim_to_first_n_turns]
+            messages = messages[messages["sequence"] < self.trim_to_first_n_turns * 2]
+            messages["sequence_length"] = messages.groupby("conversation_id")["conversation_id"].transform("size")
 
         if self.trim_the_last_n_turns is not None:
-            trajectories = trajectories[trajectories["sequence_length"] > 2*self.trim_the_last_n_turns]
-            trajectories = trajectories[trajectories["sequence"] < trajectories["sequence_length"] - self.trim_the_last_n_turns * 2]
+            messages = messages[messages["sequence_length"] > 2*self.trim_the_last_n_turns]
+            messages = messages[messages["sequence"] < messages["sequence_length"] - self.trim_the_last_n_turns * 2]
 
-        return trajectories
+        return messages
 
     def load_trajectories(self, dataset_dir, embeddings, role):
         trajectories = pd.read_parquet(dataset_dir / EMBEDDINGS_FILENAMES[embeddings])
@@ -250,15 +245,40 @@ class FeaturesFactory:
         # summary = data.groupby("outcome").agg(["mean", "std"]).T.to_string(line_width=10_000)
         # self.logger.info("\n%s", summary)
 
+    def extract_conversations(self, dataset_dir):
+        messages = self.load_prompt_memory_entries(dataset_dir)
+        messages = self.filter_by_num_turns(messages)
+
+        messages = messages[["conversation_id", "sequence", "role", "original_value"]]
+        messages.sort_values(by=["conversation_id", "sequence"], inplace=True)
+
+        messages = messages.rename(columns={"original_value": "content"})
+
+        conversation = (
+            messages.groupby("conversation_id")[["role", "content"]]
+            .apply(lambda x: x.to_dict(orient="records"))
+            .to_dict()
+        )
+        return conversation
+
+
     def execute(self, dataset_dirs):
         self.logger.info(f"Calculating features for datasets: \n{"\n".join([str(dataset_dir) for dataset_dir in dataset_dirs])}")
         data = []
+        conversations = {}
         for dataset_dir in dataset_dirs:
             data.append(self.calculate_features(dataset_dir))
+            conversations.update(self.extract_conversations(dataset_dir))
+
         data = pd.concat(data)
         self.summarize_data(data)
         data.to_csv(self.experiment_dir / FEATURES_FILENAME)
         self.logger.info(f"Features are saved as: {self.experiment_dir / FEATURES_FILENAME}")
+
+        with open(self.experiment_dir / CONVERSATIONS_FILENAME, "w") as f:
+            json.dump(conversations, f, indent=4)
+        self.logger.info(f"Conversations are saved as: {self.experiment_dir / CONVERSATIONS_FILENAME}")
+
 
 
 class ClassifierFactory:
@@ -267,24 +287,30 @@ class ClassifierFactory:
         self.experiment_dir = experiment_dir
         self.logger = logger
         self.classifiers = self.cfg.get("classifiers", {})
+        self.baselines = [baseline_name for baseline_name, baseline_setup in self.cfg.get("baselines", {}).items() if baseline_setup]
 
     def execute(self):
         results = []
 
-        for classifier_name, hyperparameters in self.classifiers.items():
-            data = pd.read_csv(self.experiment_dir / FEATURES_FILENAME, index_col=0)
+        data = pd.read_csv(self.experiment_dir / FEATURES_FILENAME, index_col=0)
+        X = data.drop(columns=["outcome"])
+        y = data["outcome"]
 
-            X = data.drop(columns=["outcome"])
-            y = data["outcome"]
+        with open(self.experiment_dir / CONVERSATIONS_FILENAME, "r") as f:
+            conversations = json.load(f)
+
+        test_idx = set(random.sample(list(data.index), int(len(data)*DEFAULT_TEST_SIZE)))
+
+        for classifier_name, hyperparameters in self.classifiers.items():
 
             if classifier_name == "logistic_regression":
                 classifier = logistic_regression
             elif classifier_name == "gradient_boosting":
                 classifier = gradient_boosting
             else:
-                raise ValueError(f"Unsupported classifier name: {classifier_name}")
+                raise ValueError(f"Unsupported classifier: {classifier_name}")
 
-            performance, factors = classifier(X, y, hyperparameters)
+            performance, factors = classifier(X, y, test_idx, hyperparameters)
             performance_table = performance.to_string(index=False, line_width=10_000)
             factors_table = factors.to_string(index=False, line_width=10_000)
 
@@ -294,6 +320,20 @@ class ClassifierFactory:
             self.logger.info("Factors:\n%s", factors_table)
 
             results.append((classifier_name, performance, factors))
+
+        for baseline_name in self.baselines:
+            if baseline_name == "llama_guard":
+                performance = asyncio.run(llama_guard(conversations, y, test_idx))
+            else:
+                raise ValueError(f"Unsupported baseline: {baseline_name}")
+
+            performance_table = performance.to_string(index=False, line_width=10_000)
+
+            self.logger.info(f"Baseline: {baseline_name}")
+            self.logger.info("Performance:\n%s", performance_table)
+
+            results.append((baseline_name, performance))
+
         
-        return results
+
 

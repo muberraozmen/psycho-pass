@@ -67,21 +67,20 @@ def analysis():
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name", type=str, help="Name of the experiment run")
 
-    parser.add_argument("--features.min_executed_turns", type=int, help="Minimum number of executed turns")
-    parser.add_argument("--features.max_executed_turns", type=int, help="Maximum number of executed turns")
-    
+    parser.add_argument("--features.trim_to_first_n_turns", type=int, help="Trim to first n turns")
+    parser.add_argument("--features.trim_the_last_n_turns", type=int, help="Trim the last n turns")
+
     parser.add_argument("--features.use_embeddings", nargs="+", type=str, help="Embeddings to use")
     parser.add_argument("--features.use_roles", nargs="+", type=str, help="Roles to use")
     parser.add_argument("--features.use_features", nargs="+", type=str, help="Features to use")
     
-    parser.add_argument("--features.trim_to_first_n_turns", type=int, help="Trim to first n turns")
-    parser.add_argument("--features.trim_the_last_n_turns", type=int, help="Trim the last n turns")
-
     parser.add_argument("--classifiers.logistic_regression.C", type=float, help="C value for logistic regression")
 
     parser.add_argument("--classifiers.gradient_boosting.learning_rate", type=float, help="Learning rate for gradient boosting")
     parser.add_argument("--classifiers.gradient_boosting.max_depth", type=int, help="Max depth for gradient boosting")
     parser.add_argument("--classifiers.gradient_boosting.l2_regularization", type=float, help="L2 regularization for gradient boosting")
+
+    parser.add_argument("--baselines.llama_guard", action='store_true')
 
     parser.add_argument("--dataset_dirs", nargs="+", type=str, help="Paths to the dataset directories")
     
