@@ -24,6 +24,7 @@ venv/
 *.fdb_latexmk
 
 # Custom  
+*.zip
 archive/
 experiments/
 paper/
