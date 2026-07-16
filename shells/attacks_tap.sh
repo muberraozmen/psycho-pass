@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-base_run_name="generation"
-max_concurrency=64
+base_run_name="tap"
+max_concurrency=8
 
 dataset_names=(
     "adv_bench"
@@ -24,10 +24,11 @@ dataset_names=(
 )
 num_samples=2
 
-attack_type="crescendo"
-attack_max_turns=8
-attack_max_backtracks=2
+attack_type="tap"
 attack_scoring_threshold=0.8
+attack_tree_width=3
+attack_tree_depth=8
+attack_branching_factor=2
 
 adversarial_model_name="meta-llama/llama-3.1-8b-instruct"
 adversarial_temperature=1.0
@@ -41,9 +42,6 @@ scoring_max_completion_tokens=1024
 
 objective_model_names=(
     "meta-llama/llama-3.1-8b-instruct"
-    "openai/gpt-oss-120b"
-    "mistralai/mistral-small-3.2-24b-instruct"
-    "qwen/qwen-2.5-7b-instruct"
 )
 objective_temperature=1.0
 objective_top_p=1.0
@@ -66,9 +64,10 @@ for objective_model_name in "${objective_model_names[@]}"; do
     --seeds.dataset_names "${dataset_names[@]}" \
     --seeds.num_samples "$num_samples" \
     --attack.type "$attack_type" \
-    --attack.max_turns "$attack_max_turns" \
-    --attack.max_backtracks "$attack_max_backtracks" \
     --attack.scoring_threshold "$attack_scoring_threshold" \
+    --attack.tree_width "$attack_tree_width" \
+    --attack.tree_depth "$attack_tree_depth" \
+    --attack.branching_factor "$attack_branching_factor" \
     --attack.adversarial.model_name "$adversarial_model_name" \
     --attack.adversarial.temperature "$adversarial_temperature" \
     --attack.adversarial.top_p "$adversarial_top_p" \

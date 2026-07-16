@@ -51,6 +51,8 @@ class AttackFactory:
             return RTA(attack_cfg)
         if self.attack_type == "crescendo":
             return Crescendo(attack_cfg)
+        if self.attack_type == "tap":
+            return TAP(attack_cfg)
         raise ValueError(f"Unsupported attack type: {self.attack_type}")
         
     async def fetch_seeds(self):

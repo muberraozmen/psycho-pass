@@ -22,10 +22,13 @@ def generation():
     )
     parser.add_argument("--seeds.num_samples", type=int, default=1, help="Number of samples")
     
-    parser.add_argument("--attack.type", type=str, default="crescendo", help="Attack type")
-    parser.add_argument("--attack.max_turns", type=int, default=8, help="Max turns")
-    parser.add_argument("--attack.max_backtracks", type=int, default=2, help="Max backtracks")
+    parser.add_argument("--attack.type", type=str, default="crescendo", help="Attack type (crescendo|tap)")
+    parser.add_argument("--attack.max_turns", type=int, default=8, help="Max turns (crescendo)")
+    parser.add_argument("--attack.max_backtracks", type=int, default=2, help="Max backtracks (crescendo)")
     parser.add_argument("--attack.scoring_threshold", type=float, default=0.8, help="Scoring threshold")
+    parser.add_argument("--attack.tree_width", type=int, default=3, help="Number of parallel branches (tap)")
+    parser.add_argument("--attack.tree_depth", type=int, default=8, help="Max depth / turn budget (tap)")
+    parser.add_argument("--attack.branching_factor", type=int, default=2, help="Child branches per node (tap)")
     
     parser.add_argument("--attack.adversarial.model_name", type=str, default="meta-llama/llama-3.1-8b-instruct", help="Adversarial model name")
     parser.add_argument("--attack.adversarial.temperature", type=float, default=1.0, help="Adversarial temperature")

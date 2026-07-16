@@ -5,10 +5,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 dataset_dirs=(
-    "experiments/generation/gpt-oss-120b"
-    "experiments/generation/llama-3.1-8b-instruct"
-    "experiments/generation/mistral-small-3.2-24b-instruct"
-    "experiments/generation/qwen-2.5-7b-instruct"
+    "experiments/crescendo/gpt-oss-120b"
+    "experiments/crescendo/llama-3.1-8b-instruct"
+    "experiments/crescendo/mistral-small-3.2-24b-instruct"
+    "experiments/crescendo/qwen-2.5-7b-instruct"
 )
 
 
