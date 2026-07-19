@@ -69,6 +69,7 @@ def analysis():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name", type=str, help="Name of the experiment run")
+    parser.add_argument("--seed", type=int, help="Random seed for the train/test split and classifiers")
 
     parser.add_argument("--features.trim_to_first_n_turns", type=int, help="Trim to first n turns")
     parser.add_argument("--features.trim_the_last_n_turns", type=int, help="Trim the last n turns")

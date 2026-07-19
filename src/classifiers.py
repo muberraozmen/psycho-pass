@@ -34,11 +34,11 @@ def classification_performance(predictions) -> pd.DataFrame:
     return performance
 
 
-def extract_significant_factors(model, X, y, feature_names) -> pd.DataFrame:
+def extract_significant_factors(model, X, y, feature_names, seed: int) -> pd.DataFrame:
     # Extract Significant Factors
     perm = permutation_importance(
         model, X, y,
-        n_repeats=DEFAULT_N_REPEATS, scoring=DEFAULT_SCORING, n_jobs=-1
+        n_repeats=DEFAULT_N_REPEATS, scoring=DEFAULT_SCORING, n_jobs=-1, random_state=seed
     )
     importances = perm.importances_mean
     importance_std = perm.importances_std
@@ -56,7 +56,7 @@ def extract_significant_factors(model, X, y, feature_names) -> pd.DataFrame:
     return factors
 
 
-def logistic_regression(X: pd.DataFrame, y:pd.Series, test_idx:set, hyperparameters: dict) -> pd.DataFrame:
+def logistic_regression(X: pd.DataFrame, y:pd.Series, test_idx:set, hyperparameters: dict, seed: int) -> pd.DataFrame:
     # Config
     C = hyperparameters.get("C", 0.005)
 
@@ -80,7 +80,8 @@ def logistic_regression(X: pd.DataFrame, y:pd.Series, test_idx:set, hyperparamet
         C=C,
         l1_ratio=1,
         solver='liblinear',
-        class_weight='balanced'
+        class_weight='balanced',
+        random_state=seed
     )
     model.fit(X_train, y_train)
 
@@ -90,12 +91,12 @@ def logistic_regression(X: pd.DataFrame, y:pd.Series, test_idx:set, hyperparamet
     performance = classification_performance(predictions)
 
     # Extract Significant Factors
-    factors = extract_significant_factors(model, X_test, y_test, feature_names)
+    factors = extract_significant_factors(model, X_test, y_test, feature_names, seed)
 
     return predictions, performance, factors
 
 
-def gradient_boosting(X: pd.DataFrame, y: pd.Series, test_idx: set, hyperparameters: dict) -> pd.DataFrame:
+def gradient_boosting(X: pd.DataFrame, y: pd.Series, test_idx: set, hyperparameters: dict, seed: int) -> pd.DataFrame:
     # Config
     learning_rate = hyperparameters.get("learning_rate", 0.1)
     max_depth = hyperparameters.get("max_depth", None)
@@ -118,6 +119,7 @@ def gradient_boosting(X: pd.DataFrame, y: pd.Series, test_idx: set, hyperparamet
         max_iter=100,
         early_stopping=True,
         class_weight='balanced',
+        random_state=seed
     )
     model.fit(X_train, y_train)
 
@@ -127,7 +129,7 @@ def gradient_boosting(X: pd.DataFrame, y: pd.Series, test_idx: set, hyperparamet
     performance = classification_performance(predictions)
 
     # Extract Significant Factors
-    factors = extract_significant_factors(model, X_test, y_test, feature_names)
+    factors = extract_significant_factors(model, X_test, y_test, feature_names, seed)
 
     return predictions, performance, factors
 

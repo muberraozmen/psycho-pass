@@ -28,6 +28,7 @@ EMBEDDINGS_FILENAMES = {
 FEATURES_FILENAME = "features.csv"
 CONVERSATIONS_FILENAME = "conversations.json"
 DEFAULT_TEST_SIZE = 0.2
+DEFAULT_SEED = 42
 
 
 class AttackFactory:
@@ -171,6 +172,7 @@ class FeaturesFactory:
         with sqlite3.connect(dataset_dir / MEMORY_FILENAME) as conn:
             are = pd.read_sql_query("SELECT * FROM AttackResultEntries;", conn)
         are = are[["conversation_id", "outcome", "executed_turns"]]
+        are = are.drop_duplicates(subset=['conversation_id'])
         are["outcome"] = are["outcome"].map({"success": 1, "failure": 0})
         are.set_index("conversation_id", inplace=True)
         return are.to_dict(orient="index")
@@ -289,6 +291,7 @@ class ClassifierFactory:
         self.logger = logger
         self.classifiers = self.cfg.get("classifiers", {})
         self.baselines = [baseline_name for baseline_name, baseline_setup in self.cfg.get("baselines", {}).items() if baseline_setup]
+        self.seed = self.cfg.get("seed", DEFAULT_SEED)
 
     def execute(self):
         data = pd.read_csv(self.experiment_dir / FEATURES_FILENAME, index_col=0)
@@ -298,7 +301,8 @@ class ClassifierFactory:
         with open(self.experiment_dir / CONVERSATIONS_FILENAME, "r") as f:
             conversations = json.load(f)
 
-        test_idx = set(random.sample(list(data.index), int(len(data)*DEFAULT_TEST_SIZE)))
+        rng = random.Random(self.seed)
+        test_idx = set(rng.sample(list(data.index), int(len(data)*DEFAULT_TEST_SIZE)))
 
         for classifier_name, hyperparameters in self.classifiers.items():
 
@@ -309,7 +313,7 @@ class ClassifierFactory:
             else:
                 raise ValueError(f"Unsupported classifier: {classifier_name}")
 
-            predictions, performance, factors = classifier(X, y, test_idx, hyperparameters)
+            predictions, performance, factors = classifier(X, y, test_idx, hyperparameters, self.seed)
             performance_table = performance.to_string(index=False, line_width=10_000)
             factors_table = factors.to_string(index=False, line_width=10_000)
 

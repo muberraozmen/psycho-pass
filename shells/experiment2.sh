@@ -16,7 +16,7 @@ analysis \
     --run_name "analysis/experiment2a" \
     --features.trim_to_first_n_turns 6 \
     --features.use_embeddings "semantic" \
-    --features.use_roles "conversation" "assistaxnt" "user" \
+    --features.use_roles "conversation" "assistant" "user" \
     --features.use_features "l2norm" "catch22" \
     --classifiers.logistic_regression.C 1.0 \
     --classifiers.gradient_boosting.learning_rate 0.1 \
